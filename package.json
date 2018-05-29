@@ -1,0 +1,27 @@
+{
+  "name": "terffee",
+  "version": "1.0.0",
+  "description": "CoffeeScript compile and minify.",
+  "main": "terffee",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/digitarhythm/terffee.git"
+  },
+  "keywords": [
+    "CoffeeScript"
+  ],
+  "author": "Hajime Oh-yake",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/digitarhythm/terffee/issues"
+  },
+  "homepage": "https://github.com/digitarhythm/terffee#readme",
+  "dependencies": {
+    "coffee-compiler": "^0.3.2",
+    "coffee-script": "^1.12.7",
+    "terser": "^3.7.5"
+  }
+}
