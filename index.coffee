@@ -3,8 +3,7 @@ terser = require("terser")
 coffee = require("coffee-compiler")
 
 target = process.argv
-target.shift(1)
-target.shift(1)
+target.splice(0, 2)
 
 COFFEE_OPTS =
   sourceMap: false
