@@ -1,20 +1,283 @@
 #!/usr/bin/env coffee
-#
+#============================================================================
+# CoffeeScriptのソースファイルと保存先を指定し、コンパイル＆minify化を行う
+# 「-c」オプションでソースファイルだけを指定した場合は、生成されるファイル
+# はソースファイルと同じ場所に保存される。
+# 例）terffee -c hoge.coffee
+# 「-o」オプションで保存先を指定する。
+# 保存場所の最後をスラッシュにするか、すでに存在するディレクトリ名を指定し
+# た場合は、ディレクトリとみなしその中に生成したファイルが「.min.js」の拡
+# 張子で保存される。
+# 例）terffee -c hoge.coffee -o ./apps/js/
+# 最後がスラッシュではない場合は、指定したソースファイルのコンパイル＆minify
+# されたものがひとつのファイルとして保存される。
+# 例）terffee -c hoge.coffee -c foo.coffee -o hogefoo.min.js
+# ソースファイルと保存場所の対応は、記述した順番になる。
+# 保存先の数がソースファイルの数よりも少ない場合、足りない分は最後の保存場所
+# がそのまま使われる。
+# 例）terffee -c hoge.coffee -o hoge.min.js -c foo.coffee -o foo.min.js -c bar.coffee
+# （上記の例では、「bar.coffee」は「foo.min.js」に結合される）
+#============================================================================
+
 terser = require("terser")
 coffee = require("coffee-compiler")
+chokidar = require("chokidar")
+argv = require("argv")
+minimist = require("minimist")
+async = require("async")
+fs = require("fs-extra")
+path = require("path")
+Promise = require("bluebird")
+
+#============================================================================
+# CoffeeScriptをコンパイルし、minify化する
+#============================================================================
+compile = (fpath) ->
+  return new Promise (resolve, reject) ->
+    COFFEE_OPTS =
+      sourceMap: false
+      bare: true
+    coffee.fromFile fpath, COFFEE_OPTS, (err, jsstr) ->
+      if (err)
+        reject(-1)
+      else
+        code = (terser.minify(jsstr)).code
+        resolve(code)
+
+#============================================================================
+# 保存先として指定された場所／ファイルをチェックする
+#============================================================================
+output_check = (output) ->
+  if (output.match(/\/$/))
+    # 保存先の指定がスラッシュで終わっている
+    otype = 0 # ディレクトリ
+  else
+    # 保存先の指定がスラッシュで終わっていない
+    try
+      # 保存指定場所が既存ディレクトリ
+      if (fs.statSync(output).isDirectory())
+        otype = 0 # ディレクトリ
+      else
+        otype = 1 # ファイル
+    catch e
+      # 保存先指定場所が存在しない or ディレクトリじゃない
+      #console.log(e)
+      otype = 1 # ファイル
+  return otype
+
+#============================================================================
+# メイン処理
+#============================================================================
+
+# 引数チェック
+argv.option
+  name: "watch"
+  short: "w"
+  type: "string"
+  description: "watch source file change."
+  example: "terffee -wc [source file path]"
+argv.option
+  name: "compile"
+  short: "c"
+  type: "path"
+  description: "compile source file."
+  example: "terffee -c [source file path]"
+argv.option
+  name: "output"
+  short: "o"
+  type: "path"
+  description: "compiled file output directory."
+  example: "terffee -o [output directroy]"
+argopt = argv.run()
 
 target = process.argv
 target.splice(0, 2)
+argm = minimist(target)
+console.log(argm)
 
+#============================================================================
+# stypeと、otype
+# type =  0: directory
+# type =  1: file
+#============================================================================
+
+#============================================================================
+# コンパイルするソースファイル一覧を取得する
+#============================================================================
+sourcepath = []
+directotypath = []
+sourcepath_tmp = argm._
+c_opt = argm.c || argm.compile
+#console.log(c_opt)
+if (c_opt?)
+  if (typeof c_opt == 'string')
+    c_opt = [c_opt]
+  #c_opt.push.apply(c_opt, argm._)
+  sourcepath_tmp.push.apply(sourcepath_tmp, c_opt)
+console.log(sourcepath_tmp)
+
+#============================================================================
+# コンパイル／minify化したファイルを保存する一覧を取得する　
+#============================================================================
+outputlist_tmp = argm.o || argm.output
+if (typeof outputlist_tmp == "object")
+  outputlist = outputlist_tmp
+else
+  outputlist = [outputlist_tmp]
+
+#============================================================================
+# 引数で指定されたソース一覧と保存先一覧を整理する
+#============================================================================
+#console.log(outputlist)
+sourcepath_tmp.map (fpath, cnt) ->
+  #console.log("fpath=#{fpath}")
+
+  # 処理するファイル
+  src = fpath
+  # 保存先
+  output = outputlist[cnt]
+
+  # ソースファイルが存在するかチェック
+  try
+    fs.accessSync(src, fs.F_OK)
+    # ソースファイルが存在する
+    if (fs.statSync(src).isDirectory())
+      # ソースファイルがディレクトリ指定
+      stype = 0 # directory
+    else
+      # ソースファイルがファイル指定
+      stype = 1 # file
+  catch e
+    # ソースファイルが存在しない
+    #console.log(e)
+    src = undefined
+
+  # ソースが存在する場合だけ処理
+  if (src?)
+    # 出力先設定
+    if (!output?)
+      # 出力先の指定がない場合は保存先リストの最後を取り出す
+      output = outputlist[outputlist.length-1]
+      #console.log("output=#{output}")
+      if (!output?)
+        if (fs.statSync(src).isDirectory())
+          otype = 0
+          output = src
+        else
+          otype = 0
+          output = path.dirname(src)
+      else
+        otype = output_check(output)
+    else
+      otype = output_check(output)
+
+    #console.log("src=#{src}, output=#{output}")
+
+    src = src.replace(/\/*$/, "")
+    output = output.replace(/\/*$/, "")
+
+    # 指定されたソースファイルがCoffeeScriptかチェックする（拡張子）
+    if (src.match(/\.coffee$/) || fs.statSync(src).isDirectory())
+      try
+        fs.accessSync(src, fs.F_OK)
+        dic = [
+          src: src
+          output: output
+          stype: stype
+          otype: otype
+        ]
+        sourcepath.push.apply(sourcepath, dic)
+      catch e
+        #console.log(e)
+
+console.log(sourcepath)
+
+#============================================================================
+# ソースファイルが指定されていない
+#============================================================================
 if (target.length == 0)
-  console.log("Usage:\nterffee [compile and minify file]")
+  argv.run(["-h"])
   process.exit(1)
 
-COFFEE_OPTS =
-  sourceMap: false
-  bare: true
+#process.exit(0)
 
-for fpath in target
-  coffee.fromFile fpath, COFFEE_OPTS, (err, jsstr) ->
-    code = (terser.minify(jsstr)).code
-    console.log(code)
+if (argm.w || argm.watch)
+
+  #==========================================================================
+  # ソースファイル／ディレクトリ監視
+  #==========================================================================
+  watchlist = []
+  for fn in sourcepath
+    fn = fn.replace(/\/*$/, "")
+    console.log("fn=#{fn}")
+    watchlist[watchlist.length] = chokidar.watch(fn)
+    #persistent: true
+
+    try
+      # check compile target
+      fs.accessSync(fn, fs.F_OK)
+      watchlist[watchlist.length-1].on 'change', (fpath, stats) ->
+        fname = path.basename(fpath)
+        if (path.extname(fname) == ".coffee")
+          console.log("fname=#{path.extname(fname)}")
+          console.log("compile and minify: [#{fname}]")
+        #compile(fpath).then (code) ->
+        #  console.log(code)
+        #.catch (e) ->
+        #  console.log(e)
+      .on 'add', (fpath, stats) ->
+        fname = path.basename(fpath)
+        if (path.extname(fname) == ".coffee")
+          console.log("watching file: [#{fname}]")
+        #compile(fpath).then (code) ->
+        #  console.log(code)
+        #.catch (e) ->
+        #  console.log(e)
+      .on 'unlink', (fpath, stats) ->
+        fname = path.basename(fpath)
+        if (path.extname(fname) == ".coffee")
+          console.log("delete file: [#{fname}]")
+    catch e
+      # target is not accessible
+else
+
+  #==========================================================================
+  # ソースファイルコンパイル
+  #==========================================================================
+  async.whilst ->
+    # コンパイルするソースファイルがなくなったらループを抜ける
+    if (sourcepath.length > 0)
+      return true
+    else
+      return false
+
+  , (callback) ->
+    # ファイルパスをひとつ取り出す
+    srcinfo = sourcepath.shift()
+    src = srcinfo.src
+    output = srcinfo.output
+    stype = srcinfo.stype
+    otype = srcinfo.otype
+
+    ofpath = output+"/"+(path.basename(src)).replace(/^(.*)\.(.*?)$/, "$1")+".min.js"
+    console.log(ofpath)
+    #compile(fpath).then (code) ->
+    #  fs.outputFile(ofpath, code)
+    #.then (err) ->
+    #  if (err)
+    #    callback(-1, null)
+    #  else
+    #    callback(null, 1)
+    #.catch (err) ->
+    #  callback(-1, null)
+    callback(null, 1)
+
+  , (err, result) ->
+    if (err)
+      switch (err)
+        when -1
+          console.log("compile error.")
+    else
+      process.exit(0)
+
+
