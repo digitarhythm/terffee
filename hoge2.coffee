@@ -1,8 +1,8 @@
 fs = require("fs")
 
-class hoge
+class hoge2
   constructor:->
     console.log("constructor")
 
-  hoge:->
-    console.log("hoge")
+  hoge2:->
+    console.log("hoge2")
