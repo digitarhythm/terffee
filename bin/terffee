@@ -38,6 +38,8 @@ PATH = require("path")
 PROMISE = require("bluebird")
 FORM = require("ndlog").form
 
+echo = require("ndlog").echo
+
 #============================================================================
 # CoffeeScriptをコンパイルし、minify化する
 #============================================================================
@@ -115,11 +117,27 @@ ARGV.option
   type: "path"
   description: "compiled file output directory."
   example: "terffee -o [output directroy]"
+ARGV.option
+  name: "recursive"
+  short: "r"
+  type: "bool"
+  description: "watching directory recursive."
+  example: "terffee -r"
 argopt = ARGV.run()
+#echo argopt
 
 target = process.argv
 target.splice(0, 2)
 argm = MINIMIST(target)
+#echo argm
+
+#============================================================================
+# オプションを取得
+#============================================================================
+c_opt = argm.c || argm.compile
+outputlist_tmp = argm.o || argm.output
+recursive = argm.r || argm.recursive || false
+echo recursive
 
 #============================================================================
 # コンパイルするソースファイル一覧を取得する
@@ -127,7 +145,6 @@ argm = MINIMIST(target)
 sourcepath_tmp = []
 directotypath = []
 sourcepath_tmp = argm._
-c_opt = argm.c || argm.compile
 if (c_opt?)
   if (typeof c_opt == 'string')
     c_opt = [c_opt]
@@ -137,7 +154,6 @@ if (c_opt?)
 #============================================================================
 # コンパイル／minify化したファイルを保存する一覧を取得する　
 #============================================================================
-outputlist_tmp = argm.o || argm.output
 if (typeof outputlist_tmp == "object")
   outputlist = outputlist_tmp
 else
@@ -204,26 +220,47 @@ if (argm.w || argm.watch)
   # ソースファイル／ディレクトリ監視
   #==========================================================================
   watchlist = []
-  for fn in sourcepath
-    fn = fn.replace(/\/*$/, "")
-    watchlist[watchlist.length] = CHOKIDAR.watch(fn)
-    #persistent: true
+  for srcinfo in sourcepath
+    # 監視対象をひとつ取り出して、行末のスラッシュを除去する
+    fn = (srcinfo.src).replace(/\/*$/, "")
+    stype = srcinfo.stype
 
     try
-      # check compile target
+      # ソースに指定されたファイル／ディレクトリが存在するかチェック
       FS.accessSync(fn, FS.F_OK)
-      watchlist[watchlist.length-1].on 'change', (fpath, stats) ->
-        fname = PATH.basename(fpath)
-        if (PATH.extname(fname) == ".coffee")
-          console.log("compile and minify: [#{fname}]")
-      .on 'add', (fpath, stats) ->
-        fname = PATH.basename(fpath)
-        if (PATH.extname(fname) == ".coffee")
-          console.log("watching file: [#{fname}]")
-      .on 'unlink', (fpath, stats) ->
-        fname = PATH.basename(fpath)
-        if (PATH.extname(fname) == ".coffee")
-          console.log("delete file: [#{fname}]")
+      switch (stype)
+        when 1 # ディレクトリ
+          recursivedepth = if (recursive) then undefined else 1
+          watchlist[watchlist.length] = CHOKIDAR.watch fn,
+            ignored: /[\/\\]\./
+            persistent: true
+            interval: 1000
+            depth: recursivedepth
+
+          # ソースに指定されたディレクトリの更新を監視する
+          watchlist[watchlist.length-1].on 'change', (fpath, stats) ->
+            fname = PATH.basename(fpath)
+            if (PATH.extname(fname) == ".coffee")
+              console.log("compile and minify: [#{fname}]")
+          # ソースに指定されたディレクトリのファイル追加を監視する
+          .on 'add', (fpath, stats) ->
+            fname = PATH.basename(fpath)
+            dir = PATH.dirname(fpath)
+            if (PATH.extname(fname) == ".coffee")
+              console.log("watching file: [#{fname}]")
+          # ソースに指定されたディレクトリのファイル削除を監視する
+          .on 'unlink', (fpath, stats) ->
+            fname = PATH.basename(fpath)
+            if (PATH.extname(fname) == ".coffee")
+              console.log("delete file: [#{fname}]")
+
+        when 2 # ファイル
+          # ソースに指定されたファイルの更新を監視する
+          FS.watch src, {persistent: true}, (event, filename) ->
+            fname = PATH.basename(src)
+            if (PATH.extname(fname) == ".coffee")
+              console.log("compile and minify: [#{fname}]")
+
     catch err
       # target is not accessible
 else
@@ -303,6 +340,5 @@ else
         when -1, -2
           console.log(ret.result)
 
-    process.exit(0)
 
 
