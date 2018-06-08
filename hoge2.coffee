@@ -5,4 +5,4 @@ class hoge2
     console.log("constructor")
 
   hoge2:->
-    console.log("hoge2")
+    console.log("hoge2"

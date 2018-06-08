@@ -22,13 +22,13 @@
 # （上記の例では、「bar.coffee」は「foo.min.js」に結合される）
 #
 # type： -1 指定したpathが存在しない
-#         0
+#         0 (未使用)
 #         1 ディレクトリ
 #         2 ファイル　
 #============================================================================
 
 TERSER = require("terser")
-COFFEE = require("coffee-compiler")
+COFFEE = require("coffee-compiler2")
 CHOKIDAR = require("chokidar")
 ARGV = require("argv")
 MINIMIST = require("minimist")
@@ -38,8 +38,6 @@ PATH = require("path")
 PROMISE = require("bluebird")
 FORM = require("ndlog").form
 
-echo = require("ndlog").echo
-
 #============================================================================
 # CoffeeScriptをコンパイルし、minify化する
 #============================================================================
@@ -48,19 +46,29 @@ compile = (fpath) ->
     COFFEE_OPTS =
       sourceMap: true
       bare: true
-    COFFEE.fromFile fpath, COFFEE_OPTS, (err, jsstr) ->
-      #echo(jsstr)
-      if (err)
-        reject(-1)
-      else
-        code = (TERSER.minify(jsstr)).code
-        resolve(code)
+    try
+      COFFEE.fromFile fpath, COFFEE_OPTS, (err, jsstr) ->
+        if (err)
+          reject
+            err: -1
+            message: "compile error."
+            result: err.message
+        else
+          code = (TERSER.minify(jsstr)).code
+          resolve
+            err: 0
+            message: "compiled."
+            result: code
+    catch e
+      reject
+        err: -2
+        message: "compile error."
+        result: err.message
 
 #============================================================================
 # 保存先として指定された場所／ファイルをチェックする
 #============================================================================
 path_check = (path) ->
-  #echo("path=%@", path)
   if (path.match(/\/$/))
     # pathがスラッシュで終わっている
     type = 1 # ディレクトリ
@@ -75,9 +83,8 @@ path_check = (path) ->
       else
         type = 2 # ファイル
         fname = PATH.basename("./#{path}")
-    catch e
+    catch err
       # pathが存在しない
-      #echo(e)
       type = -1 # 存在しない
       fname = undefined
 
@@ -113,7 +120,6 @@ argopt = ARGV.run()
 target = process.argv
 target.splice(0, 2)
 argm = MINIMIST(target)
-#echo(argm)
 
 #============================================================================
 # コンパイルするソースファイル一覧を取得する
@@ -122,13 +128,11 @@ sourcepath_tmp = []
 directotypath = []
 sourcepath_tmp = argm._
 c_opt = argm.c || argm.compile
-#echo(c_opt)
 if (c_opt?)
   if (typeof c_opt == 'string')
     c_opt = [c_opt]
   #c_opt.push.apply(c_opt, argm._)
   sourcepath_tmp.push.apply(sourcepath_tmp, c_opt)
-#echo(sourcepath_tmp)
 
 #============================================================================
 # コンパイル／minify化したファイルを保存する一覧を取得する　
@@ -142,16 +146,14 @@ else
 #============================================================================
 # 引数で指定されたソース一覧と保存先一覧を整理する
 #============================================================================
-#echo(outputlist)
+sourcepath = []
 sourcepath_tmp.map (fpath, cnt) ->
-  #echo("fpath=%@", fpath)
 
   #===========================================================================
   # ソースの種類（ファイルかディレクトリか）と存在するかチェック
   #===========================================================================
   # 処理するファイル
   src = fpath
-  #echo("src=%@", src)
   stype = path_check(src).type
   # ソースに指定されたファイル／ディレクトリが存在する場合は処理する
   if (stype > 0)
@@ -181,15 +183,11 @@ sourcepath_tmp.map (fpath, cnt) ->
     # outputの末尾に「/」があったら除去する
     output = output.replace(/\/*$/, "")
 
-    sourcepath_tmp.push
+    sourcepath.push
       src: src
       stype: stype
       output: output
       otype: otype
-
-    #echo("src=[%@], stype=%@, output=[%@], otype=%@", src, stype, output, otype)
-
-#echo(sourcepath_tmp)
 
 #============================================================================
 # ソースファイルが指定されていない
@@ -206,9 +204,8 @@ if (argm.w || argm.watch)
   # ソースファイル／ディレクトリ監視
   #==========================================================================
   watchlist = []
-  for fn in sourcepath_tmp
+  for fn in sourcepath
     fn = fn.replace(/\/*$/, "")
-    echo("fn=%@", fn)
     watchlist[watchlist.length] = CHOKIDAR.watch(fn)
     #persistent: true
 
@@ -218,25 +215,16 @@ if (argm.w || argm.watch)
       watchlist[watchlist.length-1].on 'change', (fpath, stats) ->
         fname = PATH.basename(fpath)
         if (PATH.extname(fname) == ".coffee")
-          echo("fname=%@", PATH.extname(fname))
           console.log("compile and minify: [#{fname}]")
-        #compile(fpath).then (code) ->
-        #  console.log(code)
-        #.catch (e) ->
-        #  console.log(e)
       .on 'add', (fpath, stats) ->
         fname = PATH.basename(fpath)
         if (PATH.extname(fname) == ".coffee")
           console.log("watching file: [#{fname}]")
-        #compile(fpath).then (code) ->
-        #  console.log(code)
-        #.catch (e) ->
-        #  console.log(e)
       .on 'unlink', (fpath, stats) ->
         fname = PATH.basename(fpath)
         if (PATH.extname(fname) == ".coffee")
           console.log("delete file: [#{fname}]")
-    catch e
+    catch err
       # target is not accessible
 else
 
@@ -246,8 +234,8 @@ else
   # ソースファイルコンパイル
   #==========================================================================
   # ソース指定がディレクトリの場合を想定して展開する
-  sourcepath = []
-  for srcinfo in sourcepath_tmp
+  sourcepath_expand = []
+  for srcinfo in sourcepath
     src = srcinfo.src
     output = srcinfo.output
     stype = srcinfo.stype
@@ -264,59 +252,57 @@ else
             ofile = "#{output}/"+PATH.basename(srcfname).replace(/\.coffee$/, ".min.js")
           when 2 # 出力先がファイル　
             ofile = output
-        #echo "srcfname=%@, ofile=%@", srcfname, ofile
-        sourcepath.push
+        sourcepath_expand.push
           src: srcfullpath
           output: ofile
     else if (stype == 2) # ファイル
       if (!src.match(/\.coffee$/))
         continue
-      ofile = "#{output}/"+PATH.basename(src).replace(/\.coffee$/, ".min.js")
-      sourcepath.push
+      switch (otype)
+        when 1 # 出力先がディレクトリ　
+          ofile = "#{output}/"+PATH.basename(src).replace(/\.coffee$/, ".min.js")
+        when 2 # 出力先がファイル　
+          ofile = output
+      sourcepath_expand.push
         src: src
         output: ofile
-
-  echo sourcepath
-
-  # 保存先にファイルを指定しても、それがディレクトリ名として生成されてその中にmin.jsを書き出してしまう
-
-
 
   createFileFlagTable = {}
   ASYNC.whilst ->
     # コンパイルするソースファイルがなくなったらループを抜ける
-    if (sourcepath.length > 0)
+    if (sourcepath_expand.length > 0)
       return true
     else
       return false
 
   , (callback) ->
     # ファイルパスをひとつ取り出す
-    srcinfo = sourcepath.shift()
+    srcinfo = sourcepath_expand.shift()
     src = srcinfo.src
     output = srcinfo.output
 
-    compile(src).then (code) ->
+    compile(src).then (ret) ->
+      code = ret.result
       if (createFileFlagTable[src.toString]?)
-        FS.appendFile(output, code, 'utf8')
-        #echo code.replace(/\r?\n$/, "")
+        return FS.appendFile(output, code, 'utf8')
       else
-        FS.outputFile(output, code, 'utf8')
-        #echo code.replace(/\r?\n$/, "")
+        return FS.outputFile(output, code, 'utf8')
     .then (err) ->
-      createFileFlagTable[src.toString] = true
-      if (err)
-        callback(-1, null)
-      else
+      if (!err?)
+        createFileFlagTable[src.toString] = true
         callback(null, 1)
-    .catch (err) ->
-      callback(-1, null)
 
-  , (err, result) ->
+    .catch (ret) ->
+      console.log ret.result if (ret.err)
+
+  , (ret, result) ->
+    err = ret.err
+    message = ret.result
     if (err)
       switch (err)
-        when -1
-          console.log("compile error.")
+        when -1, -2
+          console.log(ret.result)
+
     process.exit(0)
 
 
