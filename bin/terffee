@@ -37,6 +37,11 @@ FS = require("fs-extra")
 PATH = require("path")
 PROMISE = require("bluebird")
 FORM = require("ndlog").form
+WATCHER = require("filewatcher")
+  forcePolling: false
+  debounce: 10
+  interval: 1000
+  persistent: true
 
 echo = require("ndlog").echo
 
@@ -49,12 +54,12 @@ compile = (fpath) ->
       sourceMap: true
       bare: true
     try
-      COFFEE.fromFile fpath, COFFEE_OPTS, (err, jsstr) ->
-        if (err)
+      COFFEE.fromFile fpath, COFFEE_OPTS, (compile_err, jsstr) ->
+        if (compile_err?)
           reject
-            err: -1
+            err: compile_err.errno
             message: "compile error."
-            result: err.message
+            result: compile_err.message
         else
           code = (TERSER.minify(jsstr)).code
           resolve
@@ -63,9 +68,9 @@ compile = (fpath) ->
             result: code
     catch e
       reject
-        err: -2
+        err: compile_err.errno
         message: "compile error."
-        result: err.message
+        result: compile_err.message
 
 #============================================================================
 # 保存先として指定された場所／ファイルをチェックする
@@ -85,7 +90,7 @@ path_check = (path) ->
       else
         type = 2 # ファイル
         fname = PATH.basename("./#{path}")
-    catch err
+    catch path_check_err
       # pathが存在しない
       type = -1 # 存在しない
       fname = undefined
@@ -93,6 +98,97 @@ path_check = (path) ->
   return
     type: type
     fname: fname
+
+#============================================================================
+# 渡されたソースがディレクトリの場合は中を探査しCoffeeScriptファイルを列挙し返す
+#============================================================================
+get_sourcelist_in_path = (srcinfo)->
+  src = srcinfo.src
+  output = srcinfo.output
+  stype = srcinfo.stype
+  otype = srcinfo.otype
+
+  ret_srclist = []
+  if (stype == 1) # ディレクトリ
+    files = FS.readdirSync(src)
+    for srcfname in files
+      srcfullpath = FORM("%@/%@", src, srcfname)
+      # ソースの指定がCoffeeScriptではない、またはディレクトリの場合は処理しない
+      if (!srcfname.match(/\.coffee$/) || FS.statSync(srcfullpath).isDirectory())
+        continue
+      switch (otype)
+        when 1 # 出力先がディレクトリ　
+          ofile = "#{output}/"+PATH.basename(srcfname).replace(/\.coffee$/, ".min.js")
+        when 2 # 出力先がファイル　
+          ofile = output
+      ret_srclist.push
+        src: srcfullpath
+        output: ofile
+  else if (stype == 2) # ファイル
+    if (!src.match(/\.coffee$/))
+      return undefined
+    switch (otype)
+      when 1 # 出力先がディレクトリ　
+        ofile = "#{output}/"+PATH.basename(src).replace(/\.coffee$/, ".min.js")
+      when 2 # 出力先がファイル　
+        ofile = output
+    ret_srclist.push
+      src: src
+      output: ofile
+
+  return ret_srclist
+
+#============================================================================
+# 渡されたソースファイル情報リストをコンパイルする
+#============================================================================
+compile_sourcelist = (sourcepath_list) ->
+  return new Promise (resolve, reject) ->
+    createFileFlagTable = {}
+    ASYNC.whilst ->
+      # コンパイルするソースファイルがなくなったらループを抜ける
+      if (sourcepath_list.length > 0)
+        return true
+      else
+        return false
+
+    , (callback) ->
+      # ファイルパスをひとつ取り出す
+      srcinfo = sourcepath_list.shift()
+      src = srcinfo.src
+      output = srcinfo.output
+
+      compile(src).then (ret) ->
+        console.log "===> compile [#{src}]..."
+        code = ret.result
+        if (createFileFlagTable[src.toString]?)
+          return FS.appendFile(output, code, 'utf8')
+        else
+          return FS.outputFile(output, code, 'utf8')
+
+      .then (compile_loop_err) ->
+        if (!compile_loop_err?)
+          createFileFlagTable[src.toString] = true
+          #console.log("done.")
+          callback(null, 1)
+
+      .catch (ret) ->
+        console.log "\n\n"+ret.result if (!ret.err?)
+        callback(null, 1)
+
+    , (ret, result) ->
+      if (ret?)
+        switch (ret.err)
+          when -1, -2
+            console.log(ret.result)
+            reject(ret.err)
+      else
+        resolve(0)
+
+
+
+#============================================================================
+#============================================================================
+#============================================================================
 
 #============================================================================
 # メイン処理
@@ -137,7 +233,7 @@ argm = MINIMIST(target)
 c_opt = argm.c || argm.compile
 outputlist_tmp = argm.o || argm.output
 recursive = argm.r || argm.recursive || false
-echo recursive
+#echo recursive
 
 #============================================================================
 # コンパイルするソースファイル一覧を取得する
@@ -219,50 +315,82 @@ if (argm.w || argm.watch)
   #==========================================================================
   # ソースファイル／ディレクトリ監視
   #==========================================================================
-  watchlist = []
+  WATCHER.on "change", (fpath, stat) ->
+    fname = PATH.basename(fpath)
+    if (PATH.extname(fname) == ".coffee")
+      switch (otype)
+        when 1 # 出力先がディレクトリ　
+          ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
+        when 2 # 出力先がファイル　
+          ofile = output
+      console.log("compile and minify: [#{fname}] to [#{ofile}]")
+
+  srcrevlist = {} # 各ソースファイルがどこに吐かれるかのリスト
+  outrevlist = {} # 各保存先がどのソースファイルから生成されるかのリスト
+  watchlist = [] # 監視するソースファイルのchokidarオブジェクト配列
   for srcinfo in sourcepath
     # 監視対象をひとつ取り出して、行末のスラッシュを除去する
-    fn = (srcinfo.src).replace(/\/*$/, "")
+    srcfname = (srcinfo.src).replace(/\/*$/, "")
+    # 情報を取り出す
     stype = srcinfo.stype
+    output = srcinfo.output
+    otype = srcinfo.otype
 
     try
       # ソースに指定されたファイル／ディレクトリが存在するかチェック
-      FS.accessSync(fn, FS.F_OK)
+      FS.accessSync(srcfname, FS.F_OK)
       switch (stype)
-        when 1 # ディレクトリ
+
+        when 1 # ディレクトリ監視
           recursivedepth = if (recursive) then undefined else 1
-          watchlist[watchlist.length] = CHOKIDAR.watch fn,
+          watchlist[srcfname] = CHOKIDAR.watch srcfname,
             ignored: /[\/\\]\./
             persistent: true
             interval: 1000
             depth: recursivedepth
 
+          # ソースファイルから生成ファイル逆引きリストを作る
+          srclist = get_sourcelist_in_path(srcinfo)
+          for finfo in srclist
+            srcrevlist[finfo.src] = output
+
+          # 生成ファイルからソースファイル一覧リストを作る
+          outrevlist[output] = [] if (!outrevlist[output]?)
+          Array.prototype.push.apply(outrevlist[output], srclist)
+
           # ソースに指定されたディレクトリの更新を監視する
-          watchlist[watchlist.length-1].on 'change', (fpath, stats) ->
+          watchlist[srcfname].on 'change', (fpath, stat) ->
             fname = PATH.basename(fpath)
+            output = srcrevlist[fpath]
+            flist = outrevlist[output].slice()
             if (PATH.extname(fname) == ".coffee")
-              console.log("compile and minify: [#{fname}]")
-          # ソースに指定されたディレクトリのファイル追加を監視する
-          .on 'add', (fpath, stats) ->
+              console.log("modify file: [#{fname}]...")
+              compile_sourcelist(flist).then (err) ->
+                console.log("compile done: "+new Date())
+              .catch (err) ->
+                echo err
+          ###
+          # ファイル追加
+          watchlist[srcfname].on 'add', (fpath, stat) ->
             fname = PATH.basename(fpath)
             dir = PATH.dirname(fpath)
             if (PATH.extname(fname) == ".coffee")
               console.log("watching file: [#{fname}]")
-          # ソースに指定されたディレクトリのファイル削除を監視する
-          .on 'unlink', (fpath, stats) ->
+          # ファイル削除
+          watchlist[srcfname].on 'unlink', (fpath, stat) ->
             fname = PATH.basename(fpath)
             if (PATH.extname(fname) == ".coffee")
               console.log("delete file: [#{fname}]")
+          ###
 
-        when 2 # ファイル
+        when 2 # ファイル監視
           # ソースに指定されたファイルの更新を監視する
-          FS.watch src, {persistent: true}, (event, filename) ->
-            fname = PATH.basename(src)
-            if (PATH.extname(fname) == ".coffee")
-              console.log("compile and minify: [#{fname}]")
+          WATCHER.add srcfname
 
-    catch err
+    catch watch_err
       # target is not accessible
+      #echo watch_err.toString()
+
 else
 
   #process.exit(0)
@@ -273,72 +401,13 @@ else
   # ソース指定がディレクトリの場合を想定して展開する
   sourcepath_expand = []
   for srcinfo in sourcepath
-    src = srcinfo.src
-    output = srcinfo.output
-    stype = srcinfo.stype
-    otype = srcinfo.otype
+    srclist = get_sourcelist_in_path(srcinfo)
+    if (!srclist?)
+      continue
+    Array.prototype.push.apply(sourcepath_expand, srclist)
 
-    if (stype == 1) # ディレクトリ
-      files = FS.readdirSync(src)
-      for srcfname in files
-        srcfullpath = FORM("%@/%@", src, srcfname)
-        if (!srcfname.match(/\.coffee$/) || FS.statSync(srcfullpath).isDirectory())
-          continue
-        switch (otype)
-          when 1 # 出力先がディレクトリ　
-            ofile = "#{output}/"+PATH.basename(srcfname).replace(/\.coffee$/, ".min.js")
-          when 2 # 出力先がファイル　
-            ofile = output
-        sourcepath_expand.push
-          src: srcfullpath
-          output: ofile
-    else if (stype == 2) # ファイル
-      if (!src.match(/\.coffee$/))
-        continue
-      switch (otype)
-        when 1 # 出力先がディレクトリ　
-          ofile = "#{output}/"+PATH.basename(src).replace(/\.coffee$/, ".min.js")
-        when 2 # 出力先がファイル　
-          ofile = output
-      sourcepath_expand.push
-        src: src
-        output: ofile
-
-  createFileFlagTable = {}
-  ASYNC.whilst ->
-    # コンパイルするソースファイルがなくなったらループを抜ける
-    if (sourcepath_expand.length > 0)
-      return true
-    else
-      return false
-
-  , (callback) ->
-    # ファイルパスをひとつ取り出す
-    srcinfo = sourcepath_expand.shift()
-    src = srcinfo.src
-    output = srcinfo.output
-
-    compile(src).then (ret) ->
-      code = ret.result
-      if (createFileFlagTable[src.toString]?)
-        return FS.appendFile(output, code, 'utf8')
-      else
-        return FS.outputFile(output, code, 'utf8')
-    .then (err) ->
-      if (!err?)
-        createFileFlagTable[src.toString] = true
-        callback(null, 1)
-
-    .catch (ret) ->
-      console.log ret.result if (ret.err)
-
-  , (ret, result) ->
-    err = ret.err
-    message = ret.result
-    if (err)
-      switch (err)
-        when -1, -2
-          console.log(ret.result)
+  # コンパイルする
+  compile_sourcelist(sourcepath_expand)
 
 
 
