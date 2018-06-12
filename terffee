@@ -174,14 +174,14 @@ compile_sourcelist = (sourcepath_list) ->
         console.log "#{cyan}===> compile #{src}#{reset}"
         code = ret.result
 
-        if (createFileFlagTable[src.toString()]?)
+        if (createFileFlagTable[src.toString().replace(/[.\/]/, "")]?)
           return FS.appendFile(output, code, 'utf8')
         else
           return FS.outputFile(output, code, 'utf8')
 
       .then (compile_loop_err) ->
         if (!compile_loop_err?)
-          createFileFlagTable[src.toString()] = true
+          createFileFlagTable[src.toString().replace(/[.\/]/, "")] = true
           callback(null, 1)
 
       .catch (ret) ->
