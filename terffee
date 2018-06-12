@@ -46,6 +46,19 @@ WATCHER = require("filewatcher")
 echo = require("ndlog").echo
 
 #============================================================================
+# 色コード
+#============================================================================
+black = '\u001b[01;30m'
+red = '\u001b[01;31m'
+green = '\u001b[01;32m'
+yellow = '\u001b[01;33m'
+blue = '\u001b[01;34m'
+magenta = '\u001b[01;35m'
+cyan = '\u001b[01;36m'
+white = '\u001b[01;37m'
+reset = '\u001b[0m'
+
+#============================================================================
 # CoffeeScriptをコンパイルし、minify化する
 #============================================================================
 compile = (fpath) ->
@@ -158,7 +171,7 @@ compile_sourcelist = (sourcepath_list) ->
       output = srcinfo.output
 
       compile(src).then (ret) ->
-        console.log "===> compile [#{src}]..."
+        console.log "#{green}===> compile [#{src}]...#{reset}"
         code = ret.result
         if (createFileFlagTable[src.toString]?)
           return FS.appendFile(output, code, 'utf8')
@@ -168,18 +181,18 @@ compile_sourcelist = (sourcepath_list) ->
       .then (compile_loop_err) ->
         if (!compile_loop_err?)
           createFileFlagTable[src.toString] = true
-          #console.log("done.")
+          #console.log("#{green}done.#{reset}")
           callback(null, 1)
 
       .catch (ret) ->
-        console.log "\n\n"+ret.result if (!ret.err?)
+        console.log "\n\n#{red}"+ret.result+"#{reset}" if (!ret.err?)
         callback(null, 1)
 
     , (ret, result) ->
       if (ret?)
         switch (ret.err)
           when -1, -2
-            console.log(ret.result)
+            console.log("#{red}"+ret.result+reset)
             reject(ret.err)
       else
         resolve(0)
@@ -300,6 +313,12 @@ sourcepath_tmp.map (fpath, cnt) ->
       stype: stype
       output: output
       otype: otype
+  else
+
+    console.log "\n#{red}File/Directory not found: #{src}#{reset}"
+    process.exit(-1)
+
+
 
 #============================================================================
 # ソースファイルが指定されていない
@@ -307,8 +326,6 @@ sourcepath_tmp.map (fpath, cnt) ->
 if (target.length == 0)
   ARGV.run(["-h"])
   process.exit(1)
-
-#process.exit(0)
 
 if (argm.w || argm.watch)
 
@@ -323,7 +340,7 @@ if (argm.w || argm.watch)
           ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
         when 2 # 出力先がファイル　
           ofile = output
-      console.log("compile and minify: [#{fname}] to [#{ofile}]")
+      console.log("#{green}compile and minify: [#{fname}] to [#{ofile}]#{reset}")
 
   srcrevlist = {} # 各ソースファイルがどこに吐かれるかのリスト
   outrevlist = {} # 各保存先がどのソースファイルから生成されるかのリスト
@@ -339,6 +356,7 @@ if (argm.w || argm.watch)
     try
       # ソースに指定されたファイル／ディレクトリが存在するかチェック
       FS.accessSync(srcfname, FS.F_OK)
+
       switch (stype)
 
         when 1 # ディレクトリ監視
@@ -364,9 +382,9 @@ if (argm.w || argm.watch)
             output = srcrevlist[fpath]
             flist = outrevlist[output].slice()
             if (PATH.extname(fname) == ".coffee")
-              console.log("modify file: [#{fname}]...")
+              console.log("#{yellow}modify file: [#{fname}]...#{reset}")
               compile_sourcelist(flist).then (err) ->
-                console.log("compile done: "+new Date())
+                console.log("#{green}compile done: "+new Date()+reset)
               .catch (err) ->
                 echo err
           ###
@@ -389,7 +407,8 @@ if (argm.w || argm.watch)
 
     catch watch_err
       # target is not accessible
-      #echo watch_err.toString()
+      echo "watch_error"
+      echo watch_err.toString()
 
 else
 
