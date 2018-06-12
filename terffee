@@ -171,7 +171,7 @@ compile_sourcelist = (sourcepath_list) ->
       output = srcinfo.output
 
       compile(src).then (ret) ->
-        console.log "#{green}===> compile [#{src}]...#{reset}"
+        console.log "#{cyan}===> compile #{src}#{reset}"
         code = ret.result
         if (createFileFlagTable[src.toString]?)
           return FS.appendFile(output, code, 'utf8')
@@ -181,7 +181,6 @@ compile_sourcelist = (sourcepath_list) ->
       .then (compile_loop_err) ->
         if (!compile_loop_err?)
           createFileFlagTable[src.toString] = true
-          #console.log("#{green}done.#{reset}")
           callback(null, 1)
 
       .catch (ret) ->
@@ -226,12 +225,6 @@ ARGV.option
   type: "path"
   description: "compiled file output directory."
   example: "terffee -o [output directroy]"
-ARGV.option
-  name: "recursive"
-  short: "r"
-  type: "bool"
-  description: "watching directory recursive."
-  example: "terffee -r"
 argopt = ARGV.run()
 #echo argopt
 
@@ -245,8 +238,6 @@ argm = MINIMIST(target)
 #============================================================================
 c_opt = argm.c || argm.compile
 outputlist_tmp = argm.o || argm.output
-recursive = argm.r || argm.recursive || false
-#echo recursive
 
 #============================================================================
 # コンパイルするソースファイル一覧を取得する
@@ -318,6 +309,7 @@ sourcepath_tmp.map (fpath, cnt) ->
     console.log "\n#{red}File/Directory not found: #{src}#{reset}"
     process.exit(-1)
 
+#echo sourcepath
 
 
 #============================================================================
@@ -360,33 +352,36 @@ if (argm.w || argm.watch)
       switch (stype)
 
         when 1 # ディレクトリ監視
-          recursivedepth = if (recursive) then undefined else 1
           watchlist[srcfname] = CHOKIDAR.watch srcfname,
             ignored: /[\/\\]\./
             persistent: true
             interval: 1000
-            depth: recursivedepth
+            depth: 1
 
           # ソースファイルから生成ファイル逆引きリストを作る
           srclist = get_sourcelist_in_path(srcinfo)
           for finfo in srclist
-            srcrevlist[finfo.src] = output
+            finfostr = finfo.src.replace(/[\.\/]/g, "")
+            srcrevlist[finfostr] = output
 
           # 生成ファイルからソースファイル一覧リストを作る
           outrevlist[output] = [] if (!outrevlist[output]?)
           Array.prototype.push.apply(outrevlist[output], srclist)
 
           # ソースに指定されたディレクトリの更新を監視する
+          console.log("#{cyan}watching file/directory: #{srcfname}#{reset}")
           watchlist[srcfname].on 'change', (fpath, stat) ->
             fname = PATH.basename(fpath)
-            output = srcrevlist[fpath]
-            flist = outrevlist[output].slice()
-            if (PATH.extname(fname) == ".coffee")
-              console.log("#{yellow}modify file: [#{fname}]...#{reset}")
-              compile_sourcelist(flist).then (err) ->
-                console.log("#{green}compile done: "+new Date()+reset)
-              .catch (err) ->
-                echo err
+            fstr = fpath.replace(/[\.\/]/g, "")
+            output = srcrevlist[fstr]
+            if (output?)
+              flist = outrevlist[output].concat()
+              if (PATH.extname(fname) == ".coffee")
+                console.log("#{yellow}modify file: #{fname}#{reset}")
+                compile_sourcelist(flist).then (err) ->
+                  console.log("#{green}compile done: "+new Date()+reset+"\n")
+                .catch (err) ->
+                  echo err
           ###
           # ファイル追加
           watchlist[srcfname].on 'add', (fpath, stat) ->
@@ -426,7 +421,9 @@ else
     Array.prototype.push.apply(sourcepath_expand, srclist)
 
   # コンパイルする
-  compile_sourcelist(sourcepath_expand)
+  compile_sourcelist(sourcepath_expand).then (err) ->
+    if (err == 0)
+      console.log("#{green}compile done: "+new Date()+reset+"\n")
 
 
 
