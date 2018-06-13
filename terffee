@@ -59,7 +59,10 @@ white = '\u001b[01;37m'
 reset = '\u001b[0m'
 
 #============================================================================
-# CoffeeScriptをコンパイルし、minify化する
+# CoffeeScriptをコンパイルし、minify化した結果をリストで返す
+# ret = err: エラーコード 0=正常終了 0以外=エラー
+#       message: 結果
+#       result: 正常終了の時はJS、エラーの時はエラーメッセージ
 #============================================================================
 compile = (fpath) ->
   return new PROMISE (resolve, reject) ->
@@ -174,14 +177,19 @@ compile_sourcelist = (sourcepath_list) ->
         console.log "#{cyan}===> compile #{src}#{reset}"
         code = ret.result
 
-        if (createFileFlagTable[src.toString().replace(/[.\/]/, "")]?)
+        # 最初の出力先への書き込みは新規作成、二回目からは追記
+        appendkey = output.replace(/[\.\/]/g, "")
+        echo "appendkey=%@", appendkey
+        if (createFileFlagTable[appendkey]?)
+          echo "append"
           return FS.appendFile(output, code, 'utf8')
         else
+          echo "write"
           return FS.outputFile(output, code, 'utf8')
 
       .then (compile_loop_err) ->
         if (!compile_loop_err?)
-          createFileFlagTable[src.toString().replace(/[.\/]/, "")] = true
+          createFileFlagTable[output.replace(/[\.\/]/g, "")] = true
           callback(null, 1)
 
       .catch (ret) ->
@@ -321,10 +329,74 @@ if (target.length == 0)
   process.exit(1)
 
 if (argm.w || argm.watch)
-
   #==========================================================================
   # ソースファイル／ディレクトリ監視
   #==========================================================================
+
+  # ファイル監視用のオブジェクト生成
+  WATCHER.on "change", (fpath, stat) ->
+    fname = PATH.basename(fpath)
+    if (PATH.extname(fname) == ".coffee")
+      output = src2output[fpath.replace(/[\.\/]/g, "")]
+      srclist = output2srclist[output]
+      echo srclist
+
+  # 監視対象を列挙
+  src2output = {}
+  output2srclist = {}
+  for srcinfo in sourcepath
+    try
+      # ソースとして指定されたファイル／ディレクトリが存在するかチェック
+      FS.accessSync(srcinfo.src, FS.F_OK)
+      # 監視対象をひとつ取り出して、行末のスラッシュを除去する
+      src = srcinfo.src.replace(/\/*$/, "")
+      stype = srcinfo.stype
+      output = srcinfo.output
+      otype = srcinfo.otype
+      #echo "src=%@, stype=%@, output=%@, otype=%@", src, stype, output, otype
+
+      # 出力先から出力ファイル名を生成する
+      switch (otype)
+        when 1 # 出力先がディレクトリ　
+          fname = PATH.basename(src)
+          ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
+        when 2 # 出力先がファイル　
+          ofile = output
+
+      output2srclist[ofile] = [] if (!output2srclist[ofile]?)
+      # 監視対象がディレクトリの場合は中のファイルを走査し処理する
+      switch (stype)
+        when 1 # 監視対象がディレクトリ
+          srclist = get_sourcelist_in_path(srcinfo)
+          #echo srclist
+          for f in srclist
+            WATCHER.add f.src
+            fname = (f.src).replace(/[\.\/]/g, "")
+            #echo fname
+            src2output[fname] = ofile
+            if (otype == 2) # 出力先がファイルの場合は、そのファイルに追加されるソースファイル名リストに追加する
+              output2srclist[ofile].push
+                src: f.src
+                output: ofile
+
+        when 2 # 監視対象がファイル
+          WATCHER.add src
+          # ソースファイルに対する出力先のファイル名を設定する
+          src2output[src.replace(/[\.\/]/g, "")] = ofile
+          if (otype == 2) # 出力先がファイルの場合は、そのファイルに追加されるソースファイル名リストに追加する
+            output2srclist[ofile].push
+              src: src
+              output: ofile
+
+    catch e
+      echo e
+
+  echo "*******************"
+  echo src2output
+  echo output2srclist
+
+  ###
+  # ファイル監視用のオブジェクト生成
   WATCHER.on "change", (fpath, stat) ->
     fname = PATH.basename(fpath)
     if (PATH.extname(fname) == ".coffee")
@@ -340,16 +412,17 @@ if (argm.w || argm.watch)
   watchlist = [] # 監視するソースファイルのchokidarオブジェクト配列
   for srcinfo in sourcepath
     # 監視対象をひとつ取り出して、行末のスラッシュを除去する
-    srcfname = (srcinfo.src).replace(/\/*$/, "")
+    src = srcinfo.src
+    srcfname = (src).replace(/\/*$/, "")
     # 情報を取り出す
     stype = srcinfo.stype
     output = srcinfo.output
     otype = srcinfo.otype
+    echo "src=%@, stype=%@, output=%@, otype=%@", srcfname, stype, output, otype
 
     try
       # ソースに指定されたファイル／ディレクトリが存在するかチェック
-      FS.accessSync(srcfname, FS.F_OK)
-
+      FS.accessSync(src, FS.F_OK)
       switch (stype)
 
         when 1 # ディレクトリ監視
@@ -359,43 +432,49 @@ if (argm.w || argm.watch)
             interval: 1000
             depth: 1
 
-          # ソースファイルから生成ファイル逆引きリストを作る
-          srclist = get_sourcelist_in_path(srcinfo)
-          for finfo in srclist
-            finfostr = finfo.src.replace(/[\.\/]/g, "")
-            srcrevlist[finfostr] = output
+          # 出力先がファイルの場合は逆引きリストを生成する
+          if (otype == 2)
+            # 各ファイルの出力先リストを生成する
+            srclist = get_sourcelist_in_path(srcinfo)
+            for finfo in srclist
+              finfostr = finfo.src.replace(/[\.\/]/g, "")
+              srcrevlist[finfostr] = output
 
-          # 生成ファイルからソースファイル一覧リストを作る
-          outrevlist[output] = [] if (!outrevlist[output]?)
-          Array.prototype.push.apply(outrevlist[output], srclist)
+            # 出力先からソースファイル一覧リストを生成する
+            outrevlist[output] = [] if (!outrevlist[output]?)
+            Array.prototype.push.apply(outrevlist[output], srclist)
 
           # ソースに指定されたディレクトリの更新を監視する
-          console.log("#{cyan}watching file/directory: #{srcfname}#{reset}")
-          watchlist[srcfname].on 'change', (fpath, stat) ->
-            fname = PATH.basename(fpath)
-            fstr = fpath.replace(/[\.\/]/g, "")
-            output = srcrevlist[fstr]
-            if (output?)
-              flist = outrevlist[output].concat()
-              if (PATH.extname(fname) == ".coffee")
-                console.log("#{yellow}modify file: #{fname}#{reset}")
-                compile_sourcelist(flist).then (err) ->
-                  console.log("#{green}compile done: "+new Date()+reset+"\n")
-                .catch (err) ->
-                  echo err
-          ###
+          echo "otype=%@", otype
+          switch (otype)
+            when 1 # 出力先がディレクトリ
+              console.log("#{cyan}watching directory: #{srcfname}#{reset}")
+            when 2 # 出力先がファイル
+              console.log("#{cyan}watching file: #{srcfname}#{reset}")
+              watchlist[srcfname].on 'change', (fpath, stat) ->
+                fname = PATH.basename(fpath)
+                fstr = fpath.replace(/[\.\/]/g, "")
+                output = srcrevlist[fstr]
+                if (output?)
+                  flist = outrevlist[output].concat()
+                  if (PATH.extname(fname) == ".coffee")
+                    console.log("#{yellow}modify file: #{fname}#{reset}")
+                    compile_sourcelist(flist).then (err) ->
+                      console.log("#{green}compile done: "+new Date()+reset+"\n")
+                    .catch (err) ->
+                      echo err
+
           # ファイル追加
-          watchlist[srcfname].on 'add', (fpath, stat) ->
-            fname = PATH.basename(fpath)
-            dir = PATH.dirname(fpath)
-            if (PATH.extname(fname) == ".coffee")
-              console.log("watching file: [#{fname}]")
-          # ファイル削除
-          watchlist[srcfname].on 'unlink', (fpath, stat) ->
-            fname = PATH.basename(fpath)
-            if (PATH.extname(fname) == ".coffee")
-              console.log("delete file: [#{fname}]")
-          ###
+          ##watchlist[srcfname].on 'add', (fpath, stat) ->
+          #  fname = PATH.basename(fpath)
+          #  dir = PATH.dirname(fpath)
+          #  if (PATH.extname(fname) == ".coffee")
+          #    console.log("watching file: [#{fname}]")
+          ## ファイル削除
+          #watchlist[srcfname].on 'unlink', (fpath, stat) ->
+          #  fname = PATH.basename(fpath)
+          #  if (PATH.extname(fname) == ".coffee")
+          #    console.log("delete file: [#{fname}]")
 
         when 2 # ファイル監視
           # ソースに指定されたファイルの更新を監視する
@@ -405,6 +484,7 @@ if (argm.w || argm.watch)
       # target is not accessible
       echo "watch_error"
       echo watch_err.toString()
+  ###
 
 else
 
