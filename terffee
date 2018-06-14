@@ -29,7 +29,6 @@
 
 TERSER = require("terser")
 COFFEE = require("coffee-compiler2")
-CHOKIDAR = require("chokidar")
 ARGV = require("argv")
 MINIMIST = require("minimist")
 ASYNC = require("async")

@@ -26,7 +26,6 @@
     "argv": "0.0.2",
     "async": "^2.6.1",
     "bluebird": "^3.5.1",
-    "chokidar": "^2.0.3",
     "coffee-compiler2": "^0.1.4",
     "coffeescript": "^2.3.1",
     "filewatcher": "^3.0.1",
