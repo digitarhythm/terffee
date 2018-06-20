@@ -5,8 +5,6 @@ CoffeeScript compile and minify tool.
 CoffeeScriptをコンパイルし自動的にminify化します。
 複数のディレクトリを監視し、それぞれ別のディレクトリ／ファイルを指定することが出来ます。
 
-$ terffee -c [ディレクトリ／ファイル] -o [ディレクトリ／ファイル] -w
-
 Compile CoffeeScript and automatically minify it. You can monitor multiple directories and specify different directories / files respectively.
 
 $ terffee -c [directory / file] -o [directory / file] -w
@@ -28,7 +26,7 @@ This is the file / directory to be compiled. If you specify a directory, the inc
 
 Specify the destination directory / file. If multiple compilation targets are specified, if there is only one save destination specification, it will be used for all compilation targets. If there are multiple destination specifications, they are used in pairs with the compilation target.
 
-例）
+例 example)
 $ terffee -c foo.coffee -o ./tmp1/ -c bar.coffee -o ./tmp2/
 
 この場合、「foo.coffee」はディレクトリ「./tmp1」配下に「foo.min.js」として保存されます。
