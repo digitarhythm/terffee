@@ -16,14 +16,12 @@ $ terffee -c [directory / file] -o [directory / file] -w
 コンパイル対象ファイル／ディレクトリです。
 ディレクトリを指定した場合は、内包するCoffeeScriptファイルがコンパイルされます。
 監視モードの場合は、内包するCoffeeScriptファイルが監視対象になります。
-
 This is the file / directory to be compiled. If you specify a directory, the included CoffeeScript file will be compiled. In the monitoring mode, the included CoffeeScript file is monitored.
 
 - -o
 保存先ディレクトリ／ファイルを指定します。
 コンパイル対象が複数指定されている場合は、保存先指定がひとつの場合はすべてのコンパイル対象でそれが使用されます。
 保存先指定が複数ある場合は、コンパイル対象と対で使用されます。
-
 Specify the destination directory / file. If multiple compilation targets are specified, if there is only one save destination specification, it will be used for all compilation targets. If there are multiple destination specifications, they are used in pairs with the compilation target.
 
 例 example)
@@ -40,5 +38,4 @@ In this case, "foo.coffee" is saved as "foo.min.js" under the directory ". / Tmp
 - -w
 コンパイルはされず、コンパイル対象ディレクトリ／ファイルを監視し、変更があった場合にコンパイルされます。
 コンパイル対象ファイルに変更があった場合、同じ保存先ファイルが指定されているコンパイル対象ファイルはすべてコンパイルされます。
-
 It is not compiled, it monitors the compilation target directory / file and compiles it when there is a change. If there is a change in the compilation target file, all files to be compiled for which the same save destination file is specified are compiled.
