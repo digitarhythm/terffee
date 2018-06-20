@@ -32,7 +32,6 @@ $ terffee -c foo.coffee -o ./tmp1/ -c bar.coffee -o ./tmp2/
 保存先指定の最後がスラッシュで終わっている、もしくは既存のディレクトリを指定すると、その配下にコンパイル対象ファイルの拡張子が「.min.js」になったファイルとして保存されます。  
 最後がスラッシュで終わっていなく、ディレクトリとして存在していない場合は、ファイルとして保存されます。  
 複数のコンパイル対象が同じ保存先ファイルになっている場合は追記されます。  
-
 In this case, "foo.coffee" is saved as "foo.min.js" under the directory ". / Tmp1". "Bar.coffee" is saved as "bar.min.js" under ". / Tmp 2". If the end of the save destination specification ends with a slash, or if you specify an existing directory, it will be saved as a file whose extension of the compilation target file is ". Min.js" under that directory. If the end does not end with a slash and it does not exist as a directory, it is saved as a file. If multiple compilation targets are the same save destination file, it will be appended.
 
 - -w

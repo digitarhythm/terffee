@@ -1,6 +1,6 @@
 {
   "name": "terffee",
-  "version": "1.0.3",
+  "version": "1.0.3b",
   "description": "CoffeeScript compile and minify.",
   "main": "terffee",
   "scripts": {
