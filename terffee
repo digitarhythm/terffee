@@ -36,6 +36,16 @@ FS = require("fs-extra")
 PATH = require("path")
 PROMISE = require("bluebird")
 FORM = require("ndlog").form
+
+###
+WATCHER = require("chokidar").watch '',
+  ignored: /[\/\\]\./
+  persistent: true
+  ignoreInitial: true
+  depth: 1
+  awaitWriteFinish: true
+  atom: true
+###
 WATCHER = require("filewatcher")
   forcePolling: false
   debounce: 10
@@ -201,7 +211,31 @@ compile_sourcelist = (sourcepath_list) ->
       else
         resolve(0)
 
-
+#============================================================================
+# 渡されたディレクトリ内のCoffeeScriptファイルを監視対象にする
+#============================================================================
+setFileWatchIntoDirectory = (srcinfo) ->
+  src = srcinfo.src.replace(/\/*$/, "")
+  stype = srcinfo.stype
+  output = srcinfo.output
+  otype = srcinfo.otype
+  srclist = get_sourcelist_in_path(srcinfo)
+  for f in srclist
+    fname2 = (f.src).replace(/[\.\/]/g, "")
+    if (!src2output[fname2]?)
+      #WATCHER.add f.src
+      # 出力先から出力ファイル名を生成する
+      switch (otype)
+        when 1 # 出力先がディレクトリ　
+          fname = PATH.basename(f.src)
+          ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
+        when 2 # 出力先がファイル　
+          ofile = output
+      output2srclist[ofile] = [] if (!output2srclist[ofile]?)
+      src2output[fname2] = ofile
+      output2srclist[ofile].push
+        src: f.src
+        output: ofile
 
 #============================================================================
 #============================================================================
@@ -312,7 +346,6 @@ sourcepath_tmp.map (fpath, cnt) ->
     console.log "\n#{red}File/Directory not found: #{src}#{reset}"
     process.exit(-1)
 
-
 #============================================================================
 # ソースファイルが指定されていない
 #============================================================================
@@ -324,19 +357,39 @@ if (argm.w || argm.watch)
   #==========================================================================
   # ソースファイル／ディレクトリ監視
   #==========================================================================
+  WATCHER
+    .on "change", (fpath, stat) ->
+      fname2 = fpath.replace(/[\.\/]/g, "")
+      if (!stat.deleted?)
+        fname = PATH.basename(fpath)
+        # ファイル更新
+        if (PATH.extname(fname) == ".coffee")
+          output = src2output[fname2]
+        else
+          # ファイル追加
+          srcinfo = undefined
+          sourcepath.map (info) ->
+            if (info.src == fpath)
+              srcinfo = info
+          setFileWatchIntoDirectory(srcinfo)
+          output = srcinfo.output
 
-  # ファイル監視用のオブジェクト生成
-  WATCHER.on "change", (fpath, stat) ->
-    fname = PATH.basename(fpath)
-    if (PATH.extname(fname) == ".coffee")
-      output = src2output[fpath.replace(/[\.\/]/g, "")]
-      srclist = output2srclist[output].concat()
-      # コンパイルする
-      compile_sourcelist(srclist).then (err) ->
-        if (err == 0)
-          console.log("#{green}compile [#{yellow}#{PATH.basename(output)}#{green}] done: "+new Date()+reset+"\n")
-      .catch (err) ->
-        console.log("error: #{err}")
+        # コンパイルする
+        srclist = output2srclist[output].concat()
+        compile_sourcelist(srclist).then (err) ->
+          if (err == 0)
+            console.log("#{green}compile [#{yellow}#{PATH.basename(output)}#{green}] done: "+new Date()+reset+"\n")
+        .catch (err) ->
+          console.log("error: #{err}")
+
+      else
+        # 監視ファイル削除
+        WATCHER.remove(fpath)
+        srcname = src2output[fname2]
+        idx = output2srclist[srcname].indexOf(fpath)
+        output2srclist[srcname].splice(idx, 1)
+        delete src2output[fname2]
+
 
   # 監視対象を列挙
   src2output = {}
@@ -355,22 +408,8 @@ if (argm.w || argm.watch)
       switch (stype)
         when 1 # 監視対象がディレクトリ
           console.log("watching directory [#{yellow}#{src}#{reset}]")
-          srclist = get_sourcelist_in_path(srcinfo)
-          for f in srclist
-            WATCHER.add f.src
-            # 出力先から出力ファイル名を生成する
-            switch (otype)
-              when 1 # 出力先がディレクトリ　
-                fname = PATH.basename(f.src)
-                ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
-              when 2 # 出力先がファイル　
-                ofile = output
-            output2srclist[ofile] = [] if (!output2srclist[ofile]?)
-            fname = (f.src).replace(/[\.\/]/g, "")
-            src2output[fname] = ofile
-            output2srclist[ofile].push
-              src: f.src
-              output: ofile
+          WATCHER.add srcinfo.src
+          setFileWatchIntoDirectory(srcinfo)
 
         when 2 # 監視対象がファイル
           console.log("watching file [#{yellow}#{src}#{reset}]")
@@ -392,6 +431,8 @@ if (argm.w || argm.watch)
     catch e
       #echo e
       console.log("File/Directory not found: #{src}")
+      WATCHER.close()
+
 
 else
 

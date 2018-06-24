@@ -1,6 +1,6 @@
 {
   "name": "terffee",
-  "version": "1.0.3b",
+  "version": "1.1.0",
   "description": "CoffeeScript compile and minify.",
   "main": "terffee",
   "scripts": {
@@ -26,12 +26,13 @@
     "argv": "0.0.2",
     "async": "^2.6.1",
     "bluebird": "^3.5.1",
+    "chokidar": "^2.0.4",
     "coffee-compiler2": "^0.1.4",
     "coffeescript": "^2.3.1",
     "filewatcher": "^3.0.1",
     "fs-extra": "^6.0.1",
     "minimist": "^1.2.0",
-    "ndlog": "^0.2.5",
+    "ndlog": "^0.3.1",
     "path": "^0.12.7",
     "terser": "^3.7.5"
   }

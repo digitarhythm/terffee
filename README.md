@@ -38,3 +38,17 @@ In this case, "foo.coffee" is saved as "foo.min.js" under the directory ". / Tmp
 コンパイルはされず、コンパイル対象ディレクトリ／ファイルを監視し、変更があった場合にコンパイルされます。  
 コンパイル対象ファイルに変更があった場合、同じ保存先ファイルが指定されているコンパイル対象ファイルはすべてコンパイルされます。  
 It is not compiled, it monitors the compilation target directory / file and compiles it when there is a change. If there is a change in the compilation target file, all files to be compiled for which the same save destination file is specified are compiled.
+
+
+
+
+
+
+The MIT License (MIT)
+Copyright (c) 2013-2016 Felix Gnass
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
