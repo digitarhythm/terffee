@@ -220,10 +220,12 @@ setFileWatchIntoDirectory = (srcinfo) ->
   output = srcinfo.output
   otype = srcinfo.otype
   srclist = get_sourcelist_in_path(srcinfo)
+  addflag = false
   for f in srclist
     fname2 = (f.src).replace(/[\.\/]/g, "")
     if (!src2output[fname2]?)
-      #WATCHER.add f.src
+      addflag = true
+      WATCHER.add f.src
       # 出力先から出力ファイル名を生成する
       switch (otype)
         when 1 # 出力先がディレクトリ　
@@ -236,6 +238,7 @@ setFileWatchIntoDirectory = (srcinfo) ->
       output2srclist[ofile].push
         src: f.src
         output: ofile
+  return addflag
 
 #============================================================================
 #============================================================================
@@ -371,9 +374,21 @@ if (argm.w || argm.watch)
           sourcepath.map (info) ->
             if (info.src == fpath)
               srcinfo = info
-          setFileWatchIntoDirectory(srcinfo)
-          output = srcinfo.output
+          addflag = setFileWatchIntoDirectory(srcinfo)
+          if (addflag)
+            output = srcinfo.output
+          else
+            output = undefined
 
+      else
+        # 監視ファイル削除
+        WATCHER.remove(fpath)
+        output = src2output[fname2]
+        idx = output2srclist[output].indexOf(fpath)
+        output2srclist[output].splice(idx, 1)
+        delete src2output[fname2]
+
+      if (output?)
         # コンパイルする
         srclist = output2srclist[output].concat()
         compile_sourcelist(srclist).then (err) ->
@@ -381,14 +396,6 @@ if (argm.w || argm.watch)
             console.log("#{green}compile [#{yellow}#{PATH.basename(output)}#{green}] done: "+new Date()+reset+"\n")
         .catch (err) ->
           console.log("error: #{err}")
-
-      else
-        # 監視ファイル削除
-        WATCHER.remove(fpath)
-        srcname = src2output[fname2]
-        idx = output2srclist[srcname].indexOf(fpath)
-        output2srclist[srcname].splice(idx, 1)
-        delete src2output[fname2]
 
 
   # 監視対象を列挙
