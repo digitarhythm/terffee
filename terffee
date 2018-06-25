@@ -384,7 +384,12 @@ if (argm.w || argm.watch)
         # 監視ファイル削除
         WATCHER.remove(fpath)
         output = src2output[fname2]
-        idx = output2srclist[output].indexOf(fpath)
+        idx = 0
+        i = 0
+        output2srclist[output].map (tmp) ->
+          if (tmp.src == fpath)
+            idx = i
+          i++
         output2srclist[output].splice(idx, 1)
         delete src2output[fname2]
 
