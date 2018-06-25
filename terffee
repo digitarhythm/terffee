@@ -220,11 +220,10 @@ setFileWatchIntoDirectory = (srcinfo) ->
   output = srcinfo.output
   otype = srcinfo.otype
   srclist = get_sourcelist_in_path(srcinfo)
-  addflag = false
+  compile_list = []
   for f in srclist
     fname2 = (f.src).replace(/[\.\/]/g, "")
     if (!src2output[fname2]?)
-      addflag = true
       WATCHER.add f.src
       # 出力先から出力ファイル名を生成する
       switch (otype)
@@ -233,12 +232,13 @@ setFileWatchIntoDirectory = (srcinfo) ->
           ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
         when 2 # 出力先がファイル　
           ofile = output
+      compile_list.push(ofile)
       output2srclist[ofile] = [] if (!output2srclist[ofile]?)
       src2output[fname2] = ofile
       output2srclist[ofile].push
         src: f.src
         output: ofile
-  return addflag
+  return compile_list
 
 #============================================================================
 #============================================================================
@@ -374,9 +374,9 @@ if (argm.w || argm.watch)
           sourcepath.map (info) ->
             if (info.src == fpath)
               srcinfo = info
-          addflag = setFileWatchIntoDirectory(srcinfo)
-          if (addflag)
-            output = srcinfo.output
+          compile_list = setFileWatchIntoDirectory(srcinfo)
+          if (compile_list.length > 0)
+            output = compile_list[0]
           else
             output = undefined
 
@@ -386,12 +386,16 @@ if (argm.w || argm.watch)
         output = src2output[fname2]
         idx = 0
         i = 0
-        output2srclist[output].map (tmp) ->
+        target_list = output2srclist[output]
+        target_list.map (tmp) ->
           if (tmp.src == fpath)
             idx = i
           i++
-        output2srclist[output].splice(idx, 1)
+        target_list.splice(idx, 1)
         delete src2output[fname2]
+        if (target_list.length == 0)
+          delete output2srclist[output]
+          output = undefined
 
       if (output?)
         # コンパイルする
