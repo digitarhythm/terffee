@@ -43,6 +43,7 @@ WATCHER = require("filewatcher")
   persistent: true
 
 echo = require("ndlog").echo
+packinfo = require("./package.json")
 
 #============================================================================
 # 色コード
@@ -269,7 +270,17 @@ ARGV.option
   type: "string"
   description: "include inline sourceMap."
   example: "terffee -m"
+ARGV.option
+  name: "version"
+  short: "v"
+  type: "string"
+  description: "display this menu."
+  example: "terffee -v"
 argopt = ARGV.run()
+
+if (argopt.options.version)
+  console.log "ver #{packinfo.version}"
+  process.exit(0)
 
 target = process.argv
 target.splice(0, 2)
