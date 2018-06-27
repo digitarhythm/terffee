@@ -36,16 +36,6 @@ FS = require("fs-extra")
 PATH = require("path")
 PROMISE = require("bluebird")
 FORM = require("ndlog").form
-
-###
-WATCHER = require("chokidar").watch '',
-  ignored: /[\/\\]\./
-  persistent: true
-  ignoreInitial: true
-  depth: 1
-  awaitWriteFinish: true
-  atom: true
-###
 WATCHER = require("filewatcher")
   forcePolling: false
   debounce: 10
@@ -76,7 +66,7 @@ reset = '\u001b[0m'
 compile = (fpath) ->
   return new PROMISE (resolve, reject) ->
     COFFEE_OPTS =
-      sourceMap: true
+      inlineMap: true
       bare: true
     try
       COFFEE.fromFile fpath, COFFEE_OPTS, (compile_err, jsstr) ->
@@ -86,7 +76,13 @@ compile = (fpath) ->
             message: "compile error."
             result: compile_err.message
         else
-          code = (TERSER.minify(jsstr)).code
+          if (inline_map)
+            terser_opts =
+              sourceMap:
+                url: "inline"
+          else
+            terser_opts = {}
+          code = (TERSER.minify(jsstr, terser_opts)).code
           resolve
             err: 0
             message: "compiled."
@@ -267,6 +263,12 @@ ARGV.option
   type: "path"
   description: "compiled file output directory."
   example: "terffee -o [output directroy]"
+ARGV.option
+  name: "inlinemap"
+  short: "m"
+  type: "string"
+  description: "include inline sourceMap."
+  example: "terffee -m"
 argopt = ARGV.run()
 
 target = process.argv
@@ -278,6 +280,7 @@ argm = MINIMIST(target)
 #============================================================================
 c_opt = argm.c || argm.compile
 outputlist_tmp = argm.o || argm.output
+inline_map = argm.m || argm.inlinemap
 
 #============================================================================
 # コンパイルするソースファイル一覧を取得する
@@ -395,7 +398,8 @@ if (argm.w || argm.watch)
         delete src2output[fname2]
         if (target_list.length == 0)
           delete output2srclist[output]
-          output = undefined
+          FS.unlink output, =>
+            output = undefined
 
       if (output?)
         # コンパイルする
