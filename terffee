@@ -398,8 +398,9 @@ if (argm.w || argm.watch)
         delete src2output[fname2]
         if (target_list.length == 0)
           delete output2srclist[output]
-          FS.unlink output, =>
-            output = undefined
+          delete_output = output
+          output = undefined
+          FS.unlink(delete_output)
 
       if (output?)
         # コンパイルする
