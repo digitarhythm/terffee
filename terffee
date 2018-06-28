@@ -78,11 +78,11 @@ compile = (fpath) ->
             result: compile_err.message
         else
           if (inline_map)
+            terser_opts = {}
+          else
             terser_opts =
               sourceMap:
                 url: "inline"
-          else
-            terser_opts = {}
           code = (TERSER.minify(jsstr, terser_opts)).code
           resolve
             err: 0
@@ -265,11 +265,11 @@ ARGV.option
   description: "compiled file output directory."
   example: "terffee -o [output directroy]"
 ARGV.option
-  name: "inlinemap"
-  short: "m"
+  name: "nomap"
+  short: "n"
   type: "string"
-  description: "include inline sourceMap."
-  example: "terffee -m"
+  description: "not include inline sourceMap."
+  example: "terffee -n"
 ARGV.option
   name: "version"
   short: "v"
@@ -291,7 +291,7 @@ argm = MINIMIST(target)
 #============================================================================
 c_opt = argm.c || argm.compile
 outputlist_tmp = argm.o || argm.output
-inline_map = argm.m || argm.inlinemap
+inline_map = argm.n || argm.nomap
 
 #============================================================================
 # コンパイルするソースファイル一覧を取得する
