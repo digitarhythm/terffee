@@ -36,6 +36,7 @@ FS = require("fs-extra")
 PATH = require("path")
 PROMISE = require("bluebird")
 FORM = require("ndlog").form
+READLINE = require("readline")
 WATCHER = require("filewatcher")
   forcePolling: false
   debounce: 10
@@ -60,17 +61,18 @@ reset = '\u001b[0m'
 
 #============================================================================
 # CoffeeScriptをコンパイルし、minify化した結果をリストで返す
+# coffeecode = CoffeeScriptコード文字列
 # ret = err: エラーコード 0=正常終了 0以外=エラー
 #       message: 結果
 #       result: 正常終了の時はJS、エラーの時はエラーメッセージ
 #============================================================================
-compile = (fpath) ->
+compile = (coffeecode) ->
   return new PROMISE (resolve, reject) ->
     COFFEE_OPTS =
       inlineMap: true
       bare: true
     try
-      COFFEE.fromFile fpath, COFFEE_OPTS, (compile_err, jsstr) ->
+      COFFEE.fromSource coffeecode, COFFEE_OPTS, (compile_err, jsstr) ->
         if (compile_err?)
           reject
             err: compile_err.errno
@@ -161,11 +163,11 @@ get_sourcelist_in_path = (srcinfo)->
   return ret_srclist
 
 #============================================================================
-# 渡されたソースファイル情報リストをコンパイルする
+# 渡されたソースファイル情報リストを読み込んで配列にして返す
 #============================================================================
-compile_sourcelist = (sourcepath_list) ->
+sourcelist_fileread = (sourcepath_list) ->
   return new Promise (resolve, reject) ->
-    createFileFlagTable = {}
+    compile_strings = []
     ASYNC.whilst ->
       # コンパイルするソースファイルがなくなったらループを抜ける
       if (sourcepath_list.length > 0)
@@ -179,34 +181,67 @@ compile_sourcelist = (sourcepath_list) ->
       src = srcinfo.src
       output = srcinfo.output
 
-      compile(src).then (ret) ->
-        console.log "#{cyan}===> compile #{src} -> #{yellow}#{output}#{reset}"
-        code = ret.result
+      # outputの最初の処理の時はリストを初期化する
+      if (!compile_strings[output]?)
+        compile_strings[output] = {}
+        compile_strings[output]['code'] = ""
+        compile_strings[output]['src'] = []
 
-        # 最初の出力先への書き込みは新規作成、二回目からは追記
-        appendkey = output.replace(/[\.\/]/g, "")
-        if (createFileFlagTable[appendkey]?)
-          return FS.appendFile(output, code, 'utf8')
+      # ソースを読み込む
+      FS.readFile src, "utf-8", (err, code) ->
+        if (err)
+          callback(err, null)
         else
-          return FS.outputFile(output, code, 'utf8')
+          # 同じoutputのところに追記する
+          compile_strings[output]['code'] += code
+          compile_strings[output]['src'].push(src)
+          callback(null, 0)
 
-      .then (compile_loop_err) ->
-        if (!compile_loop_err?)
-          createFileFlagTable[output.replace(/[\.\/]/g, "")] = true
-          callback(null, 1)
+    , (err, result) ->
+      if (result)
+        reject(undefined)
+      else
+        resolve(compile_strings)
 
-      .catch (ret) ->
-        console.log "\n\n#{red}"+ret.result+"#{reset}" if (!ret.err?)
-        callback(null, 1)
+#============================================================================
+# 渡されたソースの配列をコンパイルして保存する
+#============================================================================
+sourcelist_compile = (compile_strings) ->
+  return new Promise (resolve, reject) ->
+    # output一覧配列を取得（これでループを回す）
+    output_list = Object.keys(compile_strings)
+
+    # ループしながら順番に（同期して）コンパイルする
+    ASYNC.whilst ->
+      # コンパイルされるファイル名がなくなったらループを抜ける
+      if (output_list.length > 0)
+        return true
+      else
+        return false
+
+    , (callback) ->
+      # 生成ファイルをひとつ取り出す
+      output = output_list.shift()
+      code = compile_strings[output]['code']
+      srclist = compile_strings[output]['src']
+      srclist.map (s) ->
+        console.log "#{cyan}===> compile #{s}"
+      compile(code).then (ret) ->
+        minify = ret.result
+        err = ret.err
+        message = ret.message
+        if (err < 0)
+          callback(err, null)
+        else
+          FS.writeFile output, minify, 'utf8', ->
+            callback(null, 0)
 
     , (ret, result) ->
-      if (ret?)
-        switch (ret.err)
-          when -1, -2
-            console.log("#{red}"+ret.result+reset)
-            reject(ret.err)
+      if (result < 0)
+        reject(result)
       else
         resolve(0)
+
 
 #============================================================================
 # 渡されたディレクトリ内のCoffeeScriptファイルを監視対象にする
@@ -416,9 +451,11 @@ if (argm.w || argm.watch)
       if (output?)
         # コンパイルする
         srclist = output2srclist[output].concat()
-        compile_sourcelist(srclist).then (err) ->
+        sourcelist_fileread(srclist).then (srcjoinlist) ->
+          return sourcelist_compile(srcjoinlist)
+        .then (err) ->
           if (err == 0)
-            console.log("#{green}compile [#{yellow}#{PATH.basename(output)}#{green}] done: "+new Date()+reset+"\n")
+            console.log("#{green}create [#{yellow}#{PATH.basename(output)}#{green}] done: "+new Date()+reset+"\n")
         .catch (err) ->
           console.log("error: #{err}")
 
@@ -439,7 +476,7 @@ if (argm.w || argm.watch)
       # 監視対象がディレクトリの場合は中のファイルを走査し処理する
       switch (stype)
         when 1 # 監視対象がディレクトリ
-          console.log("watching directory [#{yellow}#{src}#{reset}]")
+          console.log("#{yellow}watching directory [#{green}#{src}#{reset}]")
           WATCHER.add srcinfo.src
           setFileWatchIntoDirectory(srcinfo)
 
@@ -482,7 +519,9 @@ else
     Array.prototype.push.apply(sourcepath_expand, srclist)
 
   # コンパイルする
-  compile_sourcelist(sourcepath_expand).then (err) ->
+  sourcelist_fileread(sourcepath_expand).then (srcjoinlist) ->
+    return sourcelist_compile(srcjoinlist)
+  .then (err) ->
     if (err == 0)
       console.log("#{green}compile done: "+new Date()+reset+"\n")
 
