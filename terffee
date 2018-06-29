@@ -134,7 +134,7 @@ get_sourcelist_in_path = (srcinfo)->
 
   ret_srclist = []
   if (stype == 1) # ディレクトリ
-    files = FS.readdirSync(src)
+    files = FS.readdir(src)
     for srcfname in files
       srcfullpath = FORM("%@/%@", src, srcfname)
       # ソースの指定がCoffeeScriptではない、またはディレクトリの場合は処理しない
@@ -159,11 +159,10 @@ get_sourcelist_in_path = (srcinfo)->
     ret_srclist.push
       src: src
       output: ofile
-
   return ret_srclist
 
 #============================================================================
-# 渡されたソースファイル情報リストを読み込んで配列にして返す
+# 渡されたソースファイル名リストからソースを読み込んで配列にして返す
 #============================================================================
 sourcelist_fileread = (sourcepath_list) ->
   return new Promise (resolve, reject) ->
