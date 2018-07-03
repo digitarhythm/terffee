@@ -395,14 +395,14 @@ sourcepath_tmp.map (fpath, cnt) ->
   else
 
     console.log "\n#{red}File/Directory not found: #{src}#{reset}"
-    process.exit(-1)
+    process.exit(0)
 
 #============================================================================
 # ソースファイルが指定されていない
 #============================================================================
 if (target.length == 0)
   ARGV.run(["-h"])
-  process.exit(1)
+  process.exit(0)
 
 if (argm.w || argm.watch)
   #==========================================================================
@@ -499,12 +499,11 @@ if (argm.w || argm.watch)
     catch e
       #echo e
       console.log("File/Directory not found: #{src}")
+      process.exit(0)
       WATCHER.close()
 
 
 else
-
-  #process.exit(0)
 
   #==========================================================================
   # ソースファイルコンパイル
