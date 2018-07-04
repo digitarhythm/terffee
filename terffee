@@ -127,39 +127,41 @@ path_check = (path) ->
 # 渡されたソースがディレクトリの場合は中を探査しCoffeeScriptファイルを列挙し返す
 #============================================================================
 get_sourcelist_in_path = (srcinfo)->
-  src = srcinfo.src
-  output = srcinfo.output
-  stype = srcinfo.stype
-  otype = srcinfo.otype
+  return new Promise (resolve, reject) ->
+    src = srcinfo.src
+    output = srcinfo.output
+    stype = srcinfo.stype
+    otype = srcinfo.otype
 
-  ret_srclist = []
-  if (stype == 1) # ディレクトリ
-    files = FS.readdir(src)
-    for srcfname in files
-      srcfullpath = FORM("%@/%@", src, srcfname)
-      # ソースの指定がCoffeeScriptではない、またはディレクトリの場合は処理しない
-      if (!srcfname.match(/\.coffee$/) || FS.statSync(srcfullpath).isDirectory())
-        continue
+    ret_srclist = []
+    if (stype == 1) # ディレクトリ
+      FS.readdir src, (err, files) ->
+        for srcfname in files
+          srcfullpath = FORM("%@/%@", src, srcfname)
+          # ソースの指定がCoffeeScriptではない、またはディレクトリの場合は処理しない
+          if (!srcfname.match(/\.coffee$/) || FS.statSync(srcfullpath).isDirectory())
+            continue
+          switch (otype)
+            when 1 # 出力先がディレクトリ　
+              ofile = "#{output}/"+PATH.basename(srcfname).replace(/\.coffee$/, ".min.js")
+            when 2 # 出力先がファイル　
+              ofile = output
+          ret_srclist.push
+            src: srcfullpath
+            output: ofile
+        resolve(ret_srclist)
+    else if (stype == 2) # ファイル
+      if (!src.match(/\.coffee$/))
+        reject(undefined)
       switch (otype)
         when 1 # 出力先がディレクトリ　
-          ofile = "#{output}/"+PATH.basename(srcfname).replace(/\.coffee$/, ".min.js")
+          ofile = "#{output}/"+PATH.basename(src).replace(/\.coffee$/, ".min.js")
         when 2 # 出力先がファイル　
           ofile = output
       ret_srclist.push
-        src: srcfullpath
+        src: src
         output: ofile
-  else if (stype == 2) # ファイル
-    if (!src.match(/\.coffee$/))
-      return undefined
-    switch (otype)
-      when 1 # 出力先がディレクトリ　
-        ofile = "#{output}/"+PATH.basename(src).replace(/\.coffee$/, ".min.js")
-      when 2 # 出力先がファイル　
-        ofile = output
-    ret_srclist.push
-      src: src
-      output: ofile
-  return ret_srclist
+      resolve(ret_srclist)
 
 #============================================================================
 # 渡されたソースファイル名リストからソースを読み込んで配列にして返す
@@ -243,33 +245,67 @@ sourcelist_compile = (compile_strings) ->
 
 
 #============================================================================
-# 渡されたディレクトリ内のCoffeeScriptファイルを監視対象にする
+# 渡されたディレクトリ内の追加されたCoffeeScriptファイルを監視対象にする
 #============================================================================
 setFileWatchIntoDirectory = (srcinfo) ->
-  src = srcinfo.src.replace(/\/*$/, "")
-  stype = srcinfo.stype
-  output = srcinfo.output
-  otype = srcinfo.otype
-  srclist = get_sourcelist_in_path(srcinfo)
-  compile_list = []
-  for f in srclist
-    fname2 = (f.src).replace(/[\.\/]/g, "")
-    if (!src2output[fname2]?)
-      WATCHER.add f.src
-      # 出力先から出力ファイル名を生成する
-      switch (otype)
-        when 1 # 出力先がディレクトリ　
-          fname = PATH.basename(f.src)
-          ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
-        when 2 # 出力先がファイル　
-          ofile = output
-      compile_list.push(ofile)
-      output2srclist[ofile] = [] if (!output2srclist[ofile]?)
-      src2output[fname2] = ofile
-      output2srclist[ofile].push
-        src: f.src
-        output: ofile
-  return compile_list
+  return new Promise (resolve, reject) ->
+    src = srcinfo.src.replace(/\/*$/, "")
+    stype = srcinfo.stype
+    output = srcinfo.output
+    otype = srcinfo.otype
+
+    get_sourcelist_in_path(srcinfo).then (srclist) ->
+      compile_list = []
+      ASYNC.whilst ->
+        if (srclist.length > 0)
+          true
+        else
+          false
+
+      , (callback) ->
+        f = srclist.shift()
+        fname2 = (f.src).replace(/[\.\/]/g, "")
+        # ソースファイルが追加された
+        if (!SRC2OUTPUT[fname2]?)
+          WATCHER.add f.src
+          # 出力先から出力ファイル名を生成する
+          switch (otype)
+            when 1 # 出力先がディレクトリ　
+              fname = PATH.basename(f.src)
+              ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
+            when 2 # 出力先がファイル　
+              ofile = output
+          compile_list.push(ofile)
+          OUTPUT2SRCLIST[ofile] = [] if (!OUTPUT2SRCLIST[ofile]?)
+          SRC2OUTPUT[fname2] = ofile
+          OUTPUT2SRCLIST[ofile].push
+            src: f.src
+            output: ofile
+        callback(null, 0)
+
+      , (err, result) ->
+        if (err)
+          reject(-1)
+        else
+          resolve(compile_list)
+
+#============================================================================
+# 渡された出力ファイルを構成するCoffeeScriptをコンパイルする
+#============================================================================
+output2compile = (output)->
+  return new Promise (resolve, reject) ->
+    srclist = OUTPUT2SRCLIST[output].concat()
+    sourcelist_fileread(srclist).then (srcjoinlist) ->
+      return sourcelist_compile(srcjoinlist)
+    .then (err) ->
+      if (err == 0)
+        console.log("#{green}create [#{yellow}#{PATH.basename(output)}#{green}] done: "+new Date()+reset+"\n")
+    .catch (err) ->
+      if (err)
+        reject(-1)
+      else
+        console.log("error: #{err}")
+        resolve(0)
 
 #============================================================================
 #============================================================================
@@ -413,43 +449,50 @@ if (argm.w || argm.watch)
       fname2 = fpath.replace(/[\.\/]/g, "")
       if (!stat.deleted?)
         fname = PATH.basename(fpath)
-        # ファイル更新
+
         if (PATH.extname(fname) == ".coffee")
-          output = src2output[fname2]
+          # ファイル更新
+          output = SRC2OUTPUT[fname2]
+          output2compile(output)
         else
           # ファイル追加
           srcinfo = undefined
+          # 追加されたディレクトリを取得
           sourcepath.map (info) ->
             if (info.src == fpath)
               srcinfo = info
-          compile_list = setFileWatchIntoDirectory(srcinfo)
-          if (compile_list.length > 0)
-            output = compile_list[0]
-          else
-            output = undefined
-
+          # 追加されたディレクトリ内の追加されたファイルを取得
+          setFileWatchIntoDirectory(srcinfo).then (compile_list) ->
+            # 追加されたファイルがあった場合は出力先を取り出す（コンパイルされる）
+            if (compile_list.length > 0)
+              output = compile_list[0]
+              output2compile(output)
       else
         # 監視ファイル削除
         WATCHER.remove(fpath)
-        output = src2output[fname2]
+        output = SRC2OUTPUT[fname2]
         idx = 0
         i = 0
-        target_list = output2srclist[output]
+        target_list = OUTPUT2SRCLIST[output]
         target_list.map (tmp) ->
           if (tmp.src == fpath)
             idx = i
           i++
         target_list.splice(idx, 1)
-        delete src2output[fname2]
+        delete SRC2OUTPUT[fname2]
         if (target_list.length == 0)
-          delete output2srclist[output]
+          delete OUTPUT2SRCLIST[output]
           delete_output = output
           output = undefined
-          FS.unlink(delete_output)
+          try
+            FS.unlink delete_output, (err) ->
+          catch e
+        output2compile(output)
 
+      ###
       if (output?)
         # コンパイルする
-        srclist = output2srclist[output].concat()
+        srclist = OUTPUT2SRCLIST[output].concat()
         sourcelist_fileread(srclist).then (srcjoinlist) ->
           return sourcelist_compile(srcjoinlist)
         .then (err) ->
@@ -457,11 +500,12 @@ if (argm.w || argm.watch)
             console.log("#{green}create [#{yellow}#{PATH.basename(output)}#{green}] done: "+new Date()+reset+"\n")
         .catch (err) ->
           console.log("error: #{err}")
+      ###
 
 
   # 監視対象を列挙
-  src2output = {}
-  output2srclist = {}
+  SRC2OUTPUT = {}
+  OUTPUT2SRCLIST = {}
   for srcinfo in sourcepath
     try
       # ソースとして指定されたファイル／ディレクトリが存在するかチェック
@@ -489,10 +533,10 @@ if (argm.w || argm.watch)
               ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
             when 2 # 出力先がファイル　
               ofile = output
-          output2srclist[ofile] = [] if (!output2srclist[ofile]?)
+          OUTPUT2SRCLIST[ofile] = [] if (!OUTPUT2SRCLIST[ofile]?)
           # ソースファイルに対する出力先のファイル名を設定する
-          src2output[src.replace(/[\.\/]/g, "")] = ofile
-          output2srclist[ofile].push
+          SRC2OUTPUT[src.replace(/[\.\/]/g, "")] = ofile
+          OUTPUT2SRCLIST[ofile].push
             src: src
             output: ofile
 
@@ -510,18 +554,24 @@ else
   #==========================================================================
   # ソース指定がディレクトリの場合を想定して展開する
   sourcepath_expand = []
-  for srcinfo in sourcepath
-    srclist = get_sourcelist_in_path(srcinfo)
-    if (!srclist?)
-      continue
-    Array.prototype.push.apply(sourcepath_expand, srclist)
-
-  # コンパイルする
-  sourcelist_fileread(sourcepath_expand).then (srcjoinlist) ->
-    return sourcelist_compile(srcjoinlist)
-  .then (err) ->
-    if (err == 0)
-      console.log("#{green}compile done: "+new Date()+reset+"\n")
+  ASYNC.whilst ->
+    if (sourcepath.length > 0)
+      return true
+    else
+      return false
+  , (callback) ->
+    srcinfo = sourcepath.shift()
+    get_sourcelist_in_path(srcinfo).then (srclist) ->
+      if (srclist?)
+        Array.prototype.push.apply(sourcepath_expand, srclist)
+      callback(null, 0)
+  , (err, result) ->
+    # コンパイルする
+    sourcelist_fileread(sourcepath_expand).then (srcjoinlist) ->
+      return sourcelist_compile(srcjoinlist)
+    .then (err) ->
+      if (err == 0)
+        console.log("#{green}compile done: "+new Date()+reset+"\n")
 
 
 
