@@ -487,21 +487,7 @@ if (argm.w || argm.watch)
           try
             FS.unlink delete_output, (err) ->
           catch e
-        output2compile(output)
-
-      ###
-      if (output?)
-        # コンパイルする
-        srclist = OUTPUT2SRCLIST[output].concat()
-        sourcelist_fileread(srclist).then (srcjoinlist) ->
-          return sourcelist_compile(srcjoinlist)
-        .then (err) ->
-          if (err == 0)
-            console.log("#{green}create [#{yellow}#{PATH.basename(output)}#{green}] done: "+new Date()+reset+"\n")
-        .catch (err) ->
-          console.log("error: #{err}")
-      ###
-
+        output2compile(output) if (output?)
 
   # 監視対象を列挙
   SRC2OUTPUT = {}
