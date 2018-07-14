@@ -1,6 +1,6 @@
 # terffee
 
-CoffeeScript compile and minify tool.
+## CoffeeScript compile and minify tool.
 
 CoffeeScriptをコンパイルし自動的にminify化します。  
 複数のディレクトリを監視し、それぞれ別のディレクトリ／ファイルを指定することが出来ます。  
@@ -45,7 +45,7 @@ It is not compiled, it monitors the compilation target directory / file and comp
 コンパイル／minify化されたJSコードの末尾に、inline sourceMapを追記しません。  
 Do not append inline sourceMap to the end of compiled / minified JS code.  
   
--------------  
+## License
   
 The MIT License (MIT)  
 Copyright (c) 2013-2016 Hajime Oh-yake
