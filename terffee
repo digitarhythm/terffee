@@ -76,8 +76,8 @@ compile = (coffeecode) ->
         if (compile_err?)
           reject
             err: compile_err.errno
-            message: "compile error."
-            result: compile_err.message
+            status: "compile error."
+            message: compile_err.message
         else
           if (inline_map)
             terser_opts = {}
@@ -88,13 +88,14 @@ compile = (coffeecode) ->
           code = (TERSER.minify(jsstr, terser_opts)).code
           resolve
             err: 0
-            message: "compiled."
+            status: "compiled."
+            message: ""
             result: code
     catch e
       reject
         err: compile_err.errno
-        message: "compile error."
-        result: compile_err.message
+        status: "compile error."
+        message: compile_err.message
 
 #============================================================================
 # 指定された場所／ファイルをチェックする
@@ -221,7 +222,7 @@ sourcelist_compile = (compile_strings) ->
         return false
 
     , (callback) ->
-      # 生成ファイルをひとつ取り出す
+      # コンパイル対象ファイル名をひとつ取り出す
       output = output_list.shift()
       code = compile_strings[output]['code']
       srclist = compile_strings[output]['src']
@@ -229,13 +230,11 @@ sourcelist_compile = (compile_strings) ->
         console.log "#{cyan}===> compile #{s}"
       compile(code).then (ret) ->
         minify = ret.result
-        err = ret.err
-        message = ret.message
-        if (err < 0)
-          callback(err, null)
-        else
-          FS.writeFile output, minify, 'utf8', ->
-            callback(null, 0)
+        FS.writeFile output, minify, 'utf8', ->
+          callback(null, 0)
+      .catch (err) ->
+        message = err.message
+        echo "#{green}#{message}#{reset}"
 
     , (ret, result) ->
       if (result < 0)
