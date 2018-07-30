@@ -234,7 +234,7 @@ sourcelist_compile = (compile_strings) ->
           callback(null, 0)
       .catch (err) ->
         message = err.message
-        echo "#{green}#{message}#{reset}"
+        console.log "#{red}#{message}#{reset}"
 
     , (ret, result) ->
       if (result < 0)
