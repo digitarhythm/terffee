@@ -371,7 +371,6 @@ sourcepath_tmp = argm._
 if (c_opt?)
   if (typeof c_opt == 'string')
     c_opt = [c_opt]
-  #c_opt.push.apply(c_opt, argm._)
   sourcepath_tmp.push.apply(sourcepath_tmp, c_opt)
 
 #============================================================================

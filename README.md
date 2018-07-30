@@ -24,7 +24,9 @@ This is the file/directory to be compiled. If you specify a directory, the inclu
 保存先ディレクトリ／ファイルを指定します。  
 コンパイル対象が複数指定されている場合は、保存先指定がひとつの場合はすべてのコンパイル対象でそれが使用されます。  
 保存先指定が複数ある場合は、コンパイル対象と対で使用されます。  
-Specify the destination directory/file. If multiple compilation targets are specified, if there is only one save destination specification, it will be used for all compilation targets. If there are multiple destination specifications, they are used in pairs with the compilation target.
+複数のコンパイル結果を指定する場合はワイルドカードを使用すると動作がおかしくなります。なぜならワイルドカードは展開される数が不確定だからです。  
+Specify the destination directory/file. If multiple compilation targets are specified, if there is only one save destination specification, it will be used for all compilation targets. If there are multiple destination specifications, they are used in pairs with the compilation target.  
+If you specify multiple compilation results, using wildcards will cause the behavior to go wrong. Because the number of wildcards to be expanded is indeterminate.
 
 例 example)  
 $ terffee -c foo.coffee -o ./tmp1/ -c bar.coffee -o ./tmp2/  
