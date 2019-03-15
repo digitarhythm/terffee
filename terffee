@@ -68,8 +68,13 @@ reset = '\u001b[0m'
 #============================================================================
 compile = (coffeecode) ->
   return new PROMISE (resolve, reject) ->
+    if (nominify)
+      inlineopt = !inline_map
+    else
+      inlineopt = true
+
     COFFEE_OPTS =
-      inlineMap: true
+      inlineMap: inlineopt
       bare: true
     try
       COFFEE.fromSource coffeecode, COFFEE_OPTS, (compile_err, jsstr) ->
@@ -79,13 +84,16 @@ compile = (coffeecode) ->
             status: "compile error."
             message: compile_err.message
         else
-          if (inline_map)
-            terser_opts = {}
+          if (nominify)
+            code = jsstr
           else
-            terser_opts =
-              sourceMap:
-                url: "inline"
-          code = (TERSER.minify(jsstr, terser_opts)).code
+            if (inline_map)
+              terser_opts = {}
+            else
+              terser_opts =
+                sourceMap:
+                  url: "inline"
+            code = (TERSER.minify(jsstr, terser_opts)).code
           resolve
             err: 0
             status: "compiled."
@@ -340,6 +348,12 @@ ARGV.option
   description: "not include inline sourceMap."
   example: "terffee -n"
 ARGV.option
+  name: "nominify"
+  short: "m"
+  type: "string"
+  description: "not minify source."
+  example: "terffee -n"
+ARGV.option
   name: "version"
   short: "v"
   type: "string"
@@ -361,6 +375,7 @@ argm = MINIMIST(target)
 c_opt = argm.c || argm.compile
 outputlist_tmp = argm.o || argm.output
 inline_map = argm.n || argm.nomap
+nominify = argm.m || argm.nominify
 
 #============================================================================
 # コンパイルするソースファイル一覧を取得する

@@ -46,6 +46,12 @@ It is not compiled, it monitors the compilation target directory/file and compil
 - -n  
 コンパイル／minify化されたJSコードの末尾に、inline sourceMapを追記しません。  
 Do not append inline sourceMap to the end of compiled/minified JS code.  
+
+- -m  
+コンパイルされた結果をminify化しません。  
+複数ディレクトリの監視だけを行いたい場合に使用します。  
+Do not minify compiled results.  
+Use this when you want to watch multiple directories only.
   
 ## License
   
