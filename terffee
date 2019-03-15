@@ -141,6 +141,7 @@ get_sourcelist_in_path = (srcinfo)->
     output = srcinfo.output
     stype = srcinfo.stype
     otype = srcinfo.otype
+    ext = if (nominify) then ".js" else ".min.js"
 
     ret_srclist = []
     if (stype == 1) # ディレクトリ
@@ -152,7 +153,7 @@ get_sourcelist_in_path = (srcinfo)->
             continue
           switch (otype)
             when 1 # 出力先がディレクトリ　
-              ofile = "#{output}/"+PATH.basename(srcfname).replace(/\.coffee$/, ".min.js")
+              ofile = "#{output}/"+PATH.basename(srcfname).replace(/\.coffee$/, ext)
             when 2 # 出力先がファイル　
               ofile = output
           ret_srclist.push
@@ -164,7 +165,7 @@ get_sourcelist_in_path = (srcinfo)->
         reject(undefined)
       switch (otype)
         when 1 # 出力先がディレクトリ　
-          ofile = "#{output}/"+PATH.basename(src).replace(/\.coffee$/, ".min.js")
+          ofile = "#{output}/"+PATH.basename(src).replace(/\.coffee$/, ext)
         when 2 # 出力先がファイル　
           ofile = output
       ret_srclist.push
@@ -260,6 +261,7 @@ setFileWatchIntoDirectory = (srcinfo) ->
     stype = srcinfo.stype
     output = srcinfo.output
     otype = srcinfo.otype
+    ext = if (nominify) then ".js" else ".min.js"
 
     get_sourcelist_in_path(srcinfo).then (srclist) ->
       compile_list = []
@@ -279,7 +281,7 @@ setFileWatchIntoDirectory = (srcinfo) ->
           switch (otype)
             when 1 # 出力先がディレクトリ　
               fname = PATH.basename(f.src)
-              ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
+              ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ext)
             when 2 # 出力先がファイル　
               ofile = output
           compile_list.push(ofile)
@@ -514,6 +516,7 @@ if (argm.w || argm.watch)
       stype = srcinfo.stype
       output = srcinfo.output
       otype = srcinfo.otype
+      ext = if (nominify) then ".js" else ".min.js"
 
       # 監視対象がディレクトリの場合は中のファイルを走査し処理する
       switch (stype)
@@ -529,7 +532,7 @@ if (argm.w || argm.watch)
           switch (otype)
             when 1 # 出力先がディレクトリ　
               fname = PATH.basename(src)
-              ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ".min.js")
+              ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ext)
             when 2 # 出力先がファイル　
               ofile = output
           OUTPUT2SRCLIST[ofile] = [] if (!OUTPUT2SRCLIST[ofile]?)
