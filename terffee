@@ -69,7 +69,7 @@ reset = '\u001b[0m'
 compile = (coffeecode) ->
   return new PROMISE (resolve, reject) ->
     if (nominify)
-      inlineopt = !inline_map
+      inlineopt = !no_inlinemap
     else
       inlineopt = true
 
@@ -87,7 +87,7 @@ compile = (coffeecode) ->
           if (nominify)
             code = jsstr
           else
-            if (inline_map)
+            if (no_inlinemap)
               terser_opts = {}
             else
               terser_opts =
@@ -142,6 +142,8 @@ get_sourcelist_in_path = (srcinfo)->
     stype = srcinfo.stype
     otype = srcinfo.otype
     ext = if (nominify) then ".js" else ".min.js"
+    if (extension?)
+      ext = ".#{extension}"
 
     ret_srclist = []
     if (stype == 1) # ディレクトリ
@@ -262,6 +264,8 @@ setFileWatchIntoDirectory = (srcinfo) ->
     output = srcinfo.output
     otype = srcinfo.otype
     ext = if (nominify) then ".js" else ".min.js"
+    if (extension?)
+      ext = ".#{extension}"
 
     get_sourcelist_in_path(srcinfo).then (srclist) ->
       compile_list = []
@@ -354,7 +358,13 @@ ARGV.option
   short: "m"
   type: "string"
   description: "not minify source."
-  example: "terffee -n"
+  example: "terffee -m"
+ARGV.option
+  name: "extension"
+  short: "e"
+  type: "string"
+  description: "Specify the extension after compilation."
+  example: "terffee -e js"
 ARGV.option
   name: "version"
   short: "v"
@@ -376,8 +386,16 @@ argm = MINIMIST(target)
 #============================================================================
 c_opt = argm.c || argm.compile
 outputlist_tmp = argm.o || argm.output
-inline_map = argm.n || argm.nomap
+no_inlinemap = argm.n || argm.nomap
 nominify = argm.m || argm.nominify
+exttmp= argm.e || argm.extension
+if (exttmp)
+  extension = argopt.options.extension
+  if (extension == "true")
+    console.log "Please, input output file extension."
+    process.exit()
+else
+  extension = undefined
 
 #============================================================================
 # コンパイルするソースファイル一覧を取得する
@@ -547,7 +565,6 @@ if (argm.w || argm.watch)
       console.log("File/Directory not found: #{src}")
       process.exit(0)
       WATCHER.close()
-
 
 else
 
