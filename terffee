@@ -106,9 +106,15 @@ compile = (coffeecode) ->
         message: compile_err.message
 
 #============================================================================
-# 指定された場所／ファイルをチェックする
+# 指定されたpathが、ディレクトリなのか、ファイルなのかを返す
+# 返値： type
+#  -1 = pathが存在しない
+#   1 = ディレクトリ
+#   2 = ファイル
+# 返値： fname
+#   pathがファイルだった場合のファイル名
 #============================================================================
-path_check = (path) ->
+isPath_DirectoryOrFile = (path) ->
   if (path.match(/\/$/))
     # pathがスラッシュで終わっている
     type = 1 # ディレクトリ
@@ -136,44 +142,58 @@ path_check = (path) ->
 # 渡されたソースがディレクトリの場合は中を探査しCoffeeScriptファイルを列挙し返す
 #============================================================================
 get_sourcelist_in_path = (srcinfo)->
-  return new Promise (resolve, reject) ->
-    src = srcinfo.src
-    output = srcinfo.output
-    stype = srcinfo.stype
-    otype = srcinfo.otype
-    ext = if (nominify) then ".js" else ".min.js"
-    if (extension?)
-      ext = ".#{extension}"
+  src = srcinfo.src
+  output = srcinfo.output
+  stype = srcinfo.stype
+  otype = srcinfo.otype
+  ext = if (nominify) then ".js" else ".min.js"
+  if (extension?)
+    ext = ".#{extension}"
 
-    ret_srclist = []
-    if (stype == 1) # ディレクトリ
-      FS.readdir src, (err, files) ->
-        for srcfname in files
-          srcfullpath = FORM("%@/%@", src, srcfname)
-          # ソースの指定がCoffeeScriptではない、またはディレクトリの場合は処理しない
-          if (!srcfname.match(/\.coffee$/) || FS.statSync(srcfullpath).isDirectory())
-            continue
-          switch (otype)
-            when 1 # 出力先がディレクトリ　
-              ofile = "#{output}/"+PATH.basename(srcfname).replace(/\.coffee$/, ext)
-            when 2 # 出力先がファイル　
-              ofile = output
-          ret_srclist.push
-            src: srcfullpath
-            output: ofile
-        resolve(ret_srclist)
-    else if (stype == 2) # ファイル
-      if (!src.match(/\.coffee$/))
-        reject(undefined)
-      switch (otype)
-        when 1 # 出力先がディレクトリ　
-          ofile = "#{output}/"+PATH.basename(src).replace(/\.coffee$/, ext)
-        when 2 # 出力先がファイル　
-          ofile = output
-      ret_srclist.push
-        src: src
-        output: ofile
-      resolve(ret_srclist)
+  ret_srclist = []
+
+  #===========================================================================
+  # 渡されたソースがディレクトリだった
+  #===========================================================================
+  if (stype == 1) # ディレクトリ
+
+    files = FS.readdirSync(src)
+    for srcfname in files
+      srcfullpath = FORM("%@/%@", src, srcfname)
+
+      # 取り出したファイルがCoffeeScript場合は処理しない
+      if (!srcfname.match(/\.coffee$/) && !FS.statSync(srcfullpath).isDirectory())
+        continue
+
+      # 取り出したパスを再帰処理
+      else
+        if (FS.statSync(srcfullpath).isDirectory())
+          stype = 1
+        else
+          stype = 2
+        reinfo =
+          src: "#{src}/#{srcfname}"
+          output: output
+          stype: stype
+          otype: otype
+        ret_srclist = ret_srclist.concat(get_sourcelist_in_path(reinfo))
+
+  #===========================================================================
+  # 渡されたソースがファイルだった
+  #===========================================================================
+  else if (stype == 2) # ファイル
+    if (!src.match(/\.coffee$/))
+      return undefined
+    switch (otype)
+      when 1 # 出力先がディレクトリ　
+        ofile = src.replace(/\.coffee$/, ext)
+      when 2 # 出力先がファイル　
+        ofile = output
+    ret_srclist.push
+      src: src
+      output: ofile
+
+  return ret_srclist
 
 #============================================================================
 # 渡されたソースファイル名リストからソースを読み込んで配列にして返す
@@ -267,40 +287,40 @@ setFileWatchIntoDirectory = (srcinfo) ->
     if (extension?)
       ext = ".#{extension}"
 
-    get_sourcelist_in_path(srcinfo).then (srclist) ->
-      compile_list = []
-      ASYNC.whilst ->
-        if (srclist.length > 0)
-          true
-        else
-          false
+    srclist = get_sourcelist_in_path(srcinfo)
+    compile_list = []
+    ASYNC.whilst ->
+      if (srclist.length > 0)
+        true
+      else
+        false
 
-      , (callback) ->
-        f = srclist.shift()
-        fname2 = (f.src).replace(/[\.\/]/g, "")
-        # ソースファイルが追加された
-        if (!SRC2OUTPUT[fname2]?)
-          WATCHER.add f.src
-          # 出力先から出力ファイル名を生成する
-          switch (otype)
-            when 1 # 出力先がディレクトリ　
-              fname = PATH.basename(f.src)
-              ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ext)
-            when 2 # 出力先がファイル　
-              ofile = output
-          compile_list.push(ofile)
-          OUTPUT2SRCLIST[ofile] = [] if (!OUTPUT2SRCLIST[ofile]?)
-          SRC2OUTPUT[fname2] = ofile
-          OUTPUT2SRCLIST[ofile].push
-            src: f.src
-            output: ofile
-        callback(null, 0)
+    , (callback) ->
+      f = srclist.shift()
+      fname2 = (f.src).replace(/[\.\/]/g, "")
+      # ソースファイルが追加された
+      if (!SRC2OUTPUT[fname2]?)
+        WATCHER.add f.src
+        # 出力先から出力ファイル名を生成する
+        switch (otype)
+          when 1 # 出力先がディレクトリ　
+            fname = PATH.basename(f.src)
+            ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ext)
+          when 2 # 出力先がファイル　
+            ofile = output
+        compile_list.push(ofile)
+        OUTPUT2SRCLIST[ofile] = [] if (!OUTPUT2SRCLIST[ofile]?)
+        SRC2OUTPUT[fname2] = ofile
+        OUTPUT2SRCLIST[ofile].push
+          src: f.src
+          output: ofile
+      callback(null, 0)
 
-      , (err, result) ->
-        if (err)
-          reject(-1)
-        else
-          resolve(compile_list)
+    , (err, result) ->
+      if (err)
+        reject(-1)
+      else
+        resolve(compile_list)
 
 #============================================================================
 # 渡された出力ファイルを構成するCoffeeScriptをコンパイルする
@@ -420,41 +440,43 @@ else
 # 引数で指定されたソース一覧と保存先一覧を整理する
 #============================================================================
 sourcepath = []
-sourcepath_tmp.map (fpath, cnt) ->
+sourcepath_tmp.forEach (fpath, cnt) ->
 
   #===========================================================================
   # ソースの種類（ファイルかディレクトリか）と存在するかチェック
   #===========================================================================
   # 処理するファイル
   src = fpath
-  stype = path_check(src).type
+  stype = isPath_DirectoryOrFile(src).type
   # ソースに指定されたファイル／ディレクトリが存在する場合は処理する
   if (stype > 0)
     # 保存先リストからひとつ取り出す
     output = outputlist[cnt] || outputlist[outputlist.length-1]
 
+    # 保存先が存在する
+    if (output?)
+      otype = isPath_DirectoryOrFile(output).type
+      # outputが存在しなかったらファイル
+      if (otype == -1)
+        otype = 2
+
     # 保存先がundefined
-    if (!output?)
-      # 保存先が無い場合は、保存先をsrcから生成する
+    else
+      # 保存先をsrcから生成する
       otype = 1
+    ###
       if (FS.statSync(src).isDirectory())
         # srcがディレクトリだった
         output = src
       else
         # srcがファイルだった
         output = PATH.dirname(src)
-
-    else
-      # 保存先が存在する
-      otype = path_check(output).type
-      # outputが存在しなかったらファイル
-      if (otype == -1)
-        otype = 2
+    ###
 
     # srcの末尾に「/」があったら除去する
     src = src.replace(/\/*$/, "")
     # outputの末尾に「/」があったら除去する
-    output = output.replace(/\/*$/, "")
+    output = output.replace(/\/*$/, "") if (outputp?)
 
     sourcepath.push
       src: src
@@ -464,14 +486,14 @@ sourcepath_tmp.map (fpath, cnt) ->
   else
 
     console.log "\n#{red}File/Directory not found: #{src}#{reset}"
-    process.exit(0)
+    process.exit(-1)
 
 #============================================================================
 # ソースファイルが指定されていない
 #============================================================================
 if (target.length == 0)
   ARGV.run(["-h"])
-  process.exit(0)
+  process.exit(-1)
 
 if (argm.w || argm.watch)
   #==========================================================================
@@ -491,7 +513,7 @@ if (argm.w || argm.watch)
           # ファイル追加
           srcinfo = undefined
           # 追加されたディレクトリを取得
-          sourcepath.map (info) ->
+          sourcepath.forEach (info) ->
             if (info.src == fpath)
               srcinfo = info
           # 追加されたディレクトリ内の追加されたファイルを取得
@@ -580,10 +602,10 @@ else
       return false
   , (callback) ->
     srcinfo = sourcepath.shift()
-    get_sourcelist_in_path(srcinfo).then (srclist) ->
-      if (srclist?)
-        Array.prototype.push.apply(sourcepath_expand, srclist)
-      callback(null, 0)
+    srclist = get_sourcelist_in_path(srcinfo)
+    if (srclist?)
+      Array.prototype.push.apply(sourcepath_expand, srclist)
+    callback(null, 0)
   , (err, result) ->
     # コンパイルする
     sourcelist_fileread(sourcepath_expand).then (srcjoinlist) ->
