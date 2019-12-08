@@ -140,6 +140,9 @@ isPath_DirectoryOrFile = (path) ->
 
 #============================================================================
 # 渡されたソースがディレクトリの場合は中を探査しCoffeeScriptファイルを列挙し返す
+# otype
+#   1 = ディレクトリ
+#   2 = ファイル
 #============================================================================
 get_sourcelist_in_path = (srcinfo)->
   src = srcinfo.src
@@ -186,7 +189,8 @@ get_sourcelist_in_path = (srcinfo)->
       return undefined
     switch (otype)
       when 1 # 出力先がディレクトリ　
-        ofile = src.replace(/\.coffee$/, ext)
+        #ofile = src.replace(/\.coffee$/, ext)
+        ofile = "#{output}/#{PATH.basename(src).replace(/\.coffee$/, ext)}"
       when 2 # 出力先がファイル　
         ofile = output
     ret_srclist.push
