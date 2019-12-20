@@ -145,6 +145,7 @@ isPath_DirectoryOrFile = (path) ->
 #   2 = ファイル
 #============================================================================
 get_sourcelist_in_path = (srcinfo)->
+  echo srcinfo
   src = srcinfo.src
   output = srcinfo.output
   stype = srcinfo.stype
@@ -188,14 +189,17 @@ get_sourcelist_in_path = (srcinfo)->
     if (!src.match(/\.coffee$/))
       return undefined
     switch (otype)
-      when 1 # 出力先がディレクトリ　
-        #ofile = src.replace(/\.coffee$/, ext)
+      when 1 # 出力先がディレクトリ
+        if (!output?)
+          output = "."
         ofile = "#{output}/#{PATH.basename(src).replace(/\.coffee$/, ext)}"
       when 2 # 出力先がファイル　
         ofile = output
     ret_srclist.push
       src: src
       output: ofile
+
+    echo ret_srclist
 
   return ret_srclist
 
