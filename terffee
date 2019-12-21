@@ -145,9 +145,8 @@ isPath_DirectoryOrFile = (path) ->
 #   2 = ファイル
 #============================================================================
 get_sourcelist_in_path = (srcinfo)->
-  echo srcinfo
   src = srcinfo.src
-  output = srcinfo.output
+  output = srcinfo.output || "."
   stype = srcinfo.stype
   otype = srcinfo.otype
   ext = if (nominify) then ".js" else ".min.js"
@@ -190,16 +189,14 @@ get_sourcelist_in_path = (srcinfo)->
       return undefined
     switch (otype)
       when 1 # 出力先がディレクトリ
-        if (!output?)
-          output = "."
+        #if (!output?)
+        #  output = "."
         ofile = "#{output}/#{PATH.basename(src).replace(/\.coffee$/, ext)}"
       when 2 # 出力先がファイル　
         ofile = output
     ret_srclist.push
       src: src
       output: ofile
-
-    echo ret_srclist
 
   return ret_srclist
 
@@ -472,14 +469,6 @@ sourcepath_tmp.forEach (fpath, cnt) ->
     else
       # 保存先をsrcから生成する
       otype = 1
-    ###
-      if (FS.statSync(src).isDirectory())
-        # srcがディレクトリだった
-        output = src
-      else
-        # srcがファイルだった
-        output = PATH.dirname(src)
-    ###
 
     # srcの末尾に「/」があったら除去する
     src = src.replace(/\/*$/, "")
@@ -562,7 +551,7 @@ if (argm.w || argm.watch)
       # 監視対象をひとつ取り出して、行末のスラッシュを除去する
       src = srcinfo.src.replace(/\/*$/, "")
       stype = srcinfo.stype
-      output = srcinfo.output
+      output = srcinfo.output || "."
       otype = srcinfo.otype
       ext = if (nominify) then ".js" else ".min.js"
 
