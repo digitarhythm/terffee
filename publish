@@ -29,4 +29,10 @@ else
   exit 2
 fi
 
-echo $vernum
+echo "Update to version: v"$vernum
+
+git push origin master
+git push origin "v"$vernum
+
+npm publish
+
