@@ -1,722 +1,615 @@
-#!/usr/bin/env node
+#!/usr/bin/env coffee
+#============================================================================
+# CoffeeScriptのソースファイルと保存先を指定し、コンパイル＆minify化を行う
+# 「-c」オプションでソースファイルだけを指定した場合は、生成されるファイル
+# はソースファイルと同じ場所に保存される。
+# 例）terffee -c hoge.coffee
+#
+# 「-o」オプションで保存先を指定する。
+# 保存場所の最後をスラッシュにするか、すでに存在するディレクトリ名を指定し
+# た場合は、ディレクトリとみなしその中に生成したファイルが「.min.js」の拡
+# 張子で保存される。
+# 例）terffee -c hoge.coffee -o ./apps/js/ → ./apps/js/hoge.min.jsが生成される
+#
+# 最後がスラッシュではない場合は、指定したソースファイルのコンパイル＆minify
+# されたものがひとつのファイルとして保存される。
+# 例）terffee -c hoge.coffee -c foo.coffee -o hogefoo.min.js
+#
+# ソースファイルと保存場所の対応は、記述した順番になる。
+# 保存先の数がソースファイルの数よりも少ない場合、足りない分は最後の保存場所
+# がそのまま使われる。
+# 例）terffee -c hoge.coffee -o hoge.min.js -c foo.coffee -o foo.min.js -c bar.coffee
+# （上記の例では、「bar.coffee」は「foo.min.js」に結合される）
+#
+# type： -1 指定したpathが存在しない
+#         0 (未使用)
+#         1 ディレクトリ
+#         2 ファイル　
+#============================================================================
 
-var ARGV, ASYNC, COFFEE, FORM, FS, MINIMIST, OUTPUT2SRCLIST, PATH, PROMISE, READLINE, SRC2OUTPUT, TERSER, WATCHER, argm, argopt, black, blue, c_opt, compile, cyan, directotypath, e, echo, ext, extension, exttmp, fname, get_sourcelist_in_path, green, isPath_DirectoryOrFile, j, len, magenta, no_inlinemap, nominify, ofile, otype, output, output2compile, outputlist, outputlist_tmp, packinfo, red, reset, setFileWatchIntoDirectory, sourcelist_compile, sourcelist_fileread, sourcepath, sourcepath_expand, sourcepath_tmp, src, srcinfo, stype, target, white, yellow;
-
-TERSER = require("terser");
-
-COFFEE = require("coffee-compiler2");
-
-ARGV = require("argv");
-
-MINIMIST = require("minimist");
-
-ASYNC = require("async");
-
-FS = require("fs-extra");
-
-PATH = require("path");
-
-PROMISE = require("bluebird");
-
-FORM = require("ndlog").form;
-
-READLINE = require("readline");
-
-WATCHER = require("filewatcher")({
-  forcePolling: false,
-  debounce: 10,
-  interval: 1000,
+TERSER = require("terser")
+COFFEE = require("coffee-compiler2")
+ARGV = require("argv")
+MINIMIST = require("minimist")
+ASYNC = require("async")
+FS = require("fs-extra")
+PATH = require("path")
+PROMISE = require("bluebird")
+FORM = require("ndlog").form
+READLINE = require("readline")
+WATCHER = require("filewatcher")
+  forcePolling: false
+  debounce: 10
+  interval: 1000
   persistent: true
-});
 
-echo = require("ndlog").echo;
+echo = require("ndlog").echo
+packinfo = require("./package.json")
 
-packinfo = require("./package.json");
+#============================================================================
+# 色コード
+#============================================================================
+black = '\u001b[01;30m'
+red = '\u001b[01;31m'
+green = '\u001b[01;32m'
+yellow = '\u001b[01;33m'
+blue = '\u001b[01;34m'
+magenta = '\u001b[01;35m'
+cyan = '\u001b[01;36m'
+white = '\u001b[01;37m'
+reset = '\u001b[0m'
 
-//============================================================================
-// 色コード
-//============================================================================
-black = '\u001b[01;30m';
+#============================================================================
+# CoffeeScriptをコンパイルし、minify化した結果をリストで返す
+# coffeecode = CoffeeScriptコード文字列
+# ret = err: エラーコード 0=正常終了 0以外=エラー
+#       message: 結果
+#       result: 正常終了の時はJS、エラーの時はエラーメッセージ
+#============================================================================
+compile = (coffeecode) ->
+  return new PROMISE (resolve, reject) ->
+    if (nominify)
+      inlineopt = !no_inlinemap
+    else
+      inlineopt = true
 
-red = '\u001b[01;31m';
-
-green = '\u001b[01;32m';
-
-yellow = '\u001b[01;33m';
-
-blue = '\u001b[01;34m';
-
-magenta = '\u001b[01;35m';
-
-cyan = '\u001b[01;36m';
-
-white = '\u001b[01;37m';
-
-reset = '\u001b[0m';
-
-//============================================================================
-// CoffeeScriptをコンパイルし、minify化した結果をリストで返す
-// coffeecode = CoffeeScriptコード文字列
-// ret = err: エラーコード 0=正常終了 0以外=エラー
-//       message: 結果
-//       result: 正常終了の時はJS、エラーの時はエラーメッセージ
-//============================================================================
-compile = function(coffeecode) {
-  return new PROMISE(function(resolve, reject) {
-    var COFFEE_OPTS, e, inlineopt;
-    if (nominify) {
-      inlineopt = !no_inlinemap;
-    } else {
-      inlineopt = true;
-    }
-    COFFEE_OPTS = {
-      inlineMap: inlineopt,
+    COFFEE_OPTS =
+      inlineMap: inlineopt
       bare: true
-    };
-    try {
-      return COFFEE.fromSource(coffeecode, COFFEE_OPTS, function(compile_err, jsstr) {
-        var code, terser_opts;
-        if ((compile_err != null)) {
-          return reject({
-            err: compile_err.errno,
-            status: "compile error.",
+    try
+      COFFEE.fromSource coffeecode, COFFEE_OPTS, (compile_err, jsstr) ->
+        if (compile_err?)
+          reject
+            err: compile_err.errno
+            status: "compile error."
             message: compile_err.message
-          });
-        } else {
-          if (nominify) {
-            code = jsstr;
-          } else {
-            if (no_inlinemap) {
-              terser_opts = {};
-            } else {
-              terser_opts = {
-                sourceMap: {
+        else
+          if (nominify)
+            code = jsstr
+          else
+            if (no_inlinemap)
+              terser_opts = {}
+            else
+              terser_opts =
+                sourceMap:
                   url: "inline"
-                }
-              };
-            }
-            code = (TERSER.minify(jsstr, terser_opts)).code;
-          }
-          return resolve({
-            err: 0,
-            status: "compiled.",
-            message: "",
+            code = (TERSER.minify(jsstr, terser_opts)).code
+          resolve
+            err: 0
+            status: "compiled."
+            message: ""
             result: code
-          });
-        }
-      });
-    } catch (error) {
-      e = error;
-      return reject({
-        err: compile_err.errno,
-        status: "compile error.",
+    catch e
+      reject
+        err: compile_err.errno
+        status: "compile error."
         message: compile_err.message
-      });
-    }
-  });
-};
 
-//============================================================================
-// 指定されたpathが、ディレクトリなのか、ファイルなのかを返す
-// 返値： type
-//  -1 = pathが存在しない
-//   1 = ディレクトリ
-//   2 = ファイル
-// 返値： fname
-//   pathがファイルだった場合のファイル名
-//============================================================================
-isPath_DirectoryOrFile = function(path) {
-  var fname, path_check_err, type;
-  if (path.match(/\/$/)) {
-    // pathがスラッシュで終わっている
-    type = 1; // ディレクトリ
-    fname = void 0;
-  } else {
-    try {
-      // pathが既存ディレクトリ
-      // pathがスラッシュで終わっていない
-      if (FS.statSync(path).isDirectory()) {
-        type = 1; // ディレクトリ
-        fname = void 0;
-      } else {
-        type = 2; // ファイル
-        fname = PATH.basename(`./${path}`);
-      }
-    } catch (error) {
-      path_check_err = error;
-      // pathが存在しない
-      type = -1; // 存在しない
-      fname = void 0;
-    }
-  }
-  return {
-    type: type,
+#============================================================================
+# 指定されたpathが、ディレクトリなのか、ファイルなのかを返す
+# 返値： type
+#  -1 = pathが存在しない
+#   1 = ディレクトリ
+#   2 = ファイル
+# 返値： fname
+#   pathがファイルだった場合のファイル名
+#============================================================================
+isPath_DirectoryOrFile = (path) ->
+  if (path.match(/\/$/))
+    # pathがスラッシュで終わっている
+    type = 1 # ディレクトリ
+    fname = undefined
+  else
+    # pathがスラッシュで終わっていない
+    try
+      # pathが既存ディレクトリ
+      if (FS.statSync(path).isDirectory())
+        type = 1 # ディレクトリ
+        fname = undefined
+      else
+        type = 2 # ファイル
+        fname = PATH.basename("./#{path}")
+    catch path_check_err
+      # pathが存在しない
+      type = -1 # 存在しない
+      fname = undefined
+
+  return
+    type: type
     fname: fname
-  };
-};
 
-//============================================================================
-// 渡されたソースがディレクトリの場合は中を探査しCoffeeScriptファイルを列挙し返す
-// otype
-//   1 = ディレクトリ
-//   2 = ファイル
-//============================================================================
-get_sourcelist_in_path = function(srcinfo) {
-  var ext, files, j, len, ofile, otype, output, reinfo, ret_srclist, src, srcfname, srcfullpath, stype;
-  src = srcinfo.src;
-  output = srcinfo.output || ".";
-  stype = srcinfo.stype;
-  otype = srcinfo.otype;
-  ext = nominify ? ".js" : ".min.js";
-  if ((typeof extension !== "undefined" && extension !== null)) {
-    ext = `.${extension}`;
-  }
-  ret_srclist = [];
-  //===========================================================================
-  // 渡されたソースがディレクトリだった
-  //===========================================================================
-  if (stype === 1) { // ディレクトリ
-    files = FS.readdirSync(src);
-    for (j = 0, len = files.length; j < len; j++) {
-      srcfname = files[j];
-      srcfullpath = FORM("%@/%@", src, srcfname);
-      if (!srcfname.match(/\.coffee$/) && !FS.statSync(srcfullpath).isDirectory()) {
-        continue;
-      } else {
-        // 取り出したパスを再帰処理
-        if (FS.statSync(srcfullpath).isDirectory()) {
-          stype = 1;
-        } else {
-          stype = 2;
-        }
-        reinfo = {
-          src: `${src}/${srcfname}`,
-          output: output,
-          stype: stype,
+#============================================================================
+# 渡されたソースがディレクトリの場合は中を探査しCoffeeScriptファイルを列挙し返す
+# otype
+#   1 = ディレクトリ
+#   2 = ファイル
+#============================================================================
+get_sourcelist_in_path = (srcinfo)->
+  src = srcinfo.src
+  output = srcinfo.output || "."
+  stype = srcinfo.stype
+  otype = srcinfo.otype
+  ext = if (nominify) then ".js" else ".min.js"
+  if (extension?)
+    ext = ".#{extension}"
+
+  ret_srclist = []
+
+  #===========================================================================
+  # 渡されたソースがディレクトリだった
+  #===========================================================================
+  if (stype == 1) # ディレクトリ
+
+    files = FS.readdirSync(src)
+    for srcfname in files
+      srcfullpath = FORM("%@/%@", src, srcfname)
+
+      # 取り出したファイルがCoffeeScript場合は処理しない
+      if (!srcfname.match(/\.coffee$/) && !FS.statSync(srcfullpath).isDirectory())
+        continue
+
+      # 取り出したパスを再帰処理
+      else
+        if (FS.statSync(srcfullpath).isDirectory())
+          stype = 1
+        else
+          stype = 2
+        reinfo =
+          src: "#{src}/#{srcfname}"
+          output: output
+          stype: stype
           otype: otype
-        };
-        ret_srclist = ret_srclist.concat(get_sourcelist_in_path(reinfo));
-      }
-    }
-  //===========================================================================
-  // 渡されたソースがファイルだった
-  //===========================================================================
-  } else if (stype === 2) { // ファイル
-    if (!src.match(/\.coffee$/)) {
-      return void 0;
-    }
-    switch (otype) {
-      case 1: // 出力先がディレクトリ
-        //if (!output?)
-        //  output = "."
-        ofile = `${output}/${PATH.basename(src).replace(/\.coffee$/, ext)}`;
-        break;
-      case 2: // 出力先がファイル　
-        ofile = output;
-    }
-    ret_srclist.push({
-      src: src,
+        ret_srclist = ret_srclist.concat(get_sourcelist_in_path(reinfo))
+
+  #===========================================================================
+  # 渡されたソースがファイルだった
+  #===========================================================================
+  else if (stype == 2) # ファイル
+    if (!src.match(/\.coffee$/))
+      return undefined
+    switch (otype)
+      when 1 # 出力先がディレクトリ
+        #if (!output?)
+        #  output = "."
+        ofile = "#{output}/#{PATH.basename(src).replace(/\.coffee$/, ext)}"
+      when 2 # 出力先がファイル　
+        ofile = output
+    ret_srclist.push
+      src: src
       output: ofile
-    });
-  }
-  return ret_srclist;
-};
 
-//============================================================================
-// 渡されたソースファイル名リストからソースを読み込んで配列にして返す
-//============================================================================
-sourcelist_fileread = function(sourcepath_list) {
-  return new Promise(function(resolve, reject) {
-    var compile_strings;
-    compile_strings = [];
-    return ASYNC.whilst(function() {
-      // コンパイルするソースファイルがなくなったらループを抜ける
-      if (sourcepath_list.length > 0) {
-        return true;
-      } else {
-        return false;
-      }
-    }, function(callback) {
-      var output, src, srcinfo;
-      // ファイルパスをひとつ取り出す
-      srcinfo = sourcepath_list.shift();
-      src = srcinfo.src;
-      output = srcinfo.output;
-      if (compile_strings[output] == null) {
-        compile_strings[output] = {};
-        compile_strings[output]['code'] = "";
-        compile_strings[output]['src'] = [];
-      }
-      // ソースを読み込む
-      return FS.readFile(src, "utf-8", function(err, code) {
-        if (err) {
-          return callback(err, null);
-        } else {
-          // 同じoutputのところに追記する
-          compile_strings[output]['code'] += code;
-          compile_strings[output]['src'].push(src);
-          return callback(null, 0);
-        }
-      });
-    }, function(err, result) {
-      if (result) {
-        return reject(void 0);
-      } else {
-        return resolve(compile_strings);
-      }
-    });
-  });
-};
+  return ret_srclist
 
-//============================================================================
-// 渡されたソースの配列をコンパイルして保存する
-//============================================================================
-sourcelist_compile = function(compile_strings) {
-  return new Promise(function(resolve, reject) {
-    var output_list;
-    // output一覧配列を取得（これでループを回す）
-    output_list = Object.keys(compile_strings);
-    // ループしながら順番に（同期して）コンパイルする
-    return ASYNC.whilst(function() {
-      // コンパイルされるファイル名がなくなったらループを抜ける
-      if (output_list.length > 0) {
-        return true;
-      } else {
-        return false;
-      }
-    }, function(callback) {
-      var code, output, srclist;
-      // コンパイル対象ファイル名をひとつ取り出す
-      output = output_list.shift();
-      code = compile_strings[output]['code'];
-      srclist = compile_strings[output]['src'];
-      srclist.map(function(s) {
-        return console.log(`${cyan}===> compile ${s}`);
-      });
-      return compile(code).then(function(ret) {
-        var minify;
-        minify = ret.result;
-        return FS.writeFile(output, minify, 'utf8', function() {
-          return callback(null, 0);
-        });
-      }).catch(function(err) {
-        var message;
-        message = err.message;
-        return console.log(`${red}${message}${reset}`);
-      });
-    }, function(ret, result) {
-      if (result < 0) {
-        return reject(result);
-      } else {
-        return resolve(0);
-      }
-    });
-  });
-};
+#============================================================================
+# 渡されたソースファイル名リストからソースを読み込んで配列にして返す
+#============================================================================
+sourcelist_fileread = (sourcepath_list) ->
+  return new Promise (resolve, reject) ->
+    compile_strings = []
+    ASYNC.whilst ->
+      # コンパイルするソースファイルがなくなったらループを抜ける
+      if (sourcepath_list.length > 0)
+        return true
+      else
+        return false
 
-//============================================================================
-// 渡されたディレクトリ内の追加されたCoffeeScriptファイルを監視対象にする
-//============================================================================
-setFileWatchIntoDirectory = function(srcinfo) {
-  return new Promise(function(resolve, reject) {
-    var compile_list, ext, otype, output, src, srclist, stype;
-    src = srcinfo.src.replace(/\/*$/, "");
-    stype = srcinfo.stype;
-    output = srcinfo.output;
-    otype = srcinfo.otype;
-    ext = nominify ? ".js" : ".min.js";
-    if ((typeof extension !== "undefined" && extension !== null)) {
-      ext = `.${extension}`;
-    }
-    srclist = get_sourcelist_in_path(srcinfo);
-    compile_list = [];
-    return ASYNC.whilst(function() {
-      if (srclist.length > 0) {
-        return true;
-      } else {
-        return false;
-      }
-    }, function(callback) {
-      var f, fname, fname2, ofile;
-      f = srclist.shift();
-      fname2 = f.src.replace(/[\.\/]/g, "");
-      if (SRC2OUTPUT[fname2] == null) {
-        WATCHER.add(f.src);
-        // 出力先から出力ファイル名を生成する
-        switch (otype) {
-          case 1: // 出力先がディレクトリ　
-            fname = PATH.basename(f.src);
-            ofile = `${output}/` + PATH.basename(fname).replace(/\.coffee$/, ext);
-            break;
-          case 2: // 出力先がファイル　
-            ofile = output;
-        }
-        compile_list.push(ofile);
-        if (OUTPUT2SRCLIST[ofile] == null) {
-          OUTPUT2SRCLIST[ofile] = [];
-        }
-        SRC2OUTPUT[fname2] = ofile;
-        OUTPUT2SRCLIST[ofile].push({
-          src: f.src,
+    , (callback) ->
+      # ファイルパスをひとつ取り出す
+      srcinfo = sourcepath_list.shift()
+      src = srcinfo.src
+      output = srcinfo.output
+
+      # outputの最初の処理の時はリストを初期化する
+      if (!compile_strings[output]?)
+        compile_strings[output] = {}
+        compile_strings[output]['code'] = ""
+        compile_strings[output]['src'] = []
+
+      # ソースを読み込む
+      FS.readFile src, "utf-8", (err, code) ->
+        if (err)
+          callback(err, null)
+        else
+          # 同じoutputのところに追記する
+          compile_strings[output]['code'] += code
+          compile_strings[output]['src'].push(src)
+          callback(null, 0)
+
+    , (err, result) ->
+      if (result)
+        reject(undefined)
+      else
+        resolve(compile_strings)
+
+#============================================================================
+# 渡されたソースの配列をコンパイルして保存する
+#============================================================================
+sourcelist_compile = (compile_strings) ->
+  return new Promise (resolve, reject) ->
+    # output一覧配列を取得（これでループを回す）
+    output_list = Object.keys(compile_strings)
+
+    # ループしながら順番に（同期して）コンパイルする
+    ASYNC.whilst ->
+      # コンパイルされるファイル名がなくなったらループを抜ける
+      if (output_list.length > 0)
+        return true
+      else
+        return false
+
+    , (callback) ->
+      # コンパイル対象ファイル名をひとつ取り出す
+      output = output_list.shift()
+      code = compile_strings[output]['code']
+      srclist = compile_strings[output]['src']
+      srclist.map (s) ->
+        console.log "#{cyan}===> compile #{s}"
+      compile(code).then (ret) ->
+        minify = ret.result
+        FS.writeFile output, minify, 'utf8', ->
+          callback(null, 0)
+      .catch (err) ->
+        message = err.message
+        console.log "#{red}#{message}#{reset}"
+
+    , (ret, result) ->
+      if (result < 0)
+        reject(result)
+      else
+        resolve(0)
+
+
+#============================================================================
+# 渡されたディレクトリ内の追加されたCoffeeScriptファイルを監視対象にする
+#============================================================================
+setFileWatchIntoDirectory = (srcinfo) ->
+  return new Promise (resolve, reject) ->
+    src = srcinfo.src.replace(/\/*$/, "")
+    stype = srcinfo.stype
+    output = srcinfo.output
+    otype = srcinfo.otype
+    ext = if (nominify) then ".js" else ".min.js"
+    if (extension?)
+      ext = ".#{extension}"
+
+    srclist = get_sourcelist_in_path(srcinfo)
+    compile_list = []
+    ASYNC.whilst ->
+      if (srclist.length > 0)
+        true
+      else
+        false
+
+    , (callback) ->
+      f = srclist.shift()
+      fname2 = (f.src).replace(/[\.\/]/g, "")
+      # ソースファイルが追加された
+      if (!SRC2OUTPUT[fname2]?)
+        WATCHER.add f.src
+        # 出力先から出力ファイル名を生成する
+        switch (otype)
+          when 1 # 出力先がディレクトリ　
+            fname = PATH.basename(f.src)
+            ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ext)
+          when 2 # 出力先がファイル　
+            ofile = output
+        compile_list.push(ofile)
+        OUTPUT2SRCLIST[ofile] = [] if (!OUTPUT2SRCLIST[ofile]?)
+        SRC2OUTPUT[fname2] = ofile
+        OUTPUT2SRCLIST[ofile].push
+          src: f.src
           output: ofile
-        });
-      }
-      return callback(null, 0);
-    }, function(err, result) {
-      if (err) {
-        return reject(-1);
-      } else {
-        return resolve(compile_list);
-      }
-    });
-  });
-};
+      callback(null, 0)
 
-//============================================================================
-// 渡された出力ファイルを構成するCoffeeScriptをコンパイルする
-//============================================================================
-output2compile = function(output) {
-  return new Promise(function(resolve, reject) {
-    var srclist;
-    srclist = OUTPUT2SRCLIST[output].concat();
-    return sourcelist_fileread(srclist).then(function(srcjoinlist) {
-      return sourcelist_compile(srcjoinlist);
-    }).then(function(err) {
-      if (err === 0) {
-        return console.log(`${green}create [${yellow}${PATH.basename(output)}${green}] done: ` + new Date() + reset + "\n");
-      }
-    }).catch(function(err) {
-      if (err) {
-        return reject(-1);
-      } else {
-        console.log(`error: ${err}`);
-        return resolve(0);
-      }
-    });
-  });
-};
+    , (err, result) ->
+      if (err)
+        reject(-1)
+      else
+        resolve(compile_list)
 
-//============================================================================
-//============================================================================
-//============================================================================
+#============================================================================
+# 渡された出力ファイルを構成するCoffeeScriptをコンパイルする
+#============================================================================
+output2compile = (output)->
+  return new Promise (resolve, reject) ->
+    srclist = OUTPUT2SRCLIST[output].concat()
+    sourcelist_fileread(srclist).then (srcjoinlist) ->
+      return sourcelist_compile(srcjoinlist)
+    .then (err) ->
+      if (err == 0)
+        console.log("#{green}create [#{yellow}#{PATH.basename(output)}#{green}] done: "+new Date()+reset+"\n")
+    .catch (err) ->
+      if (err)
+        reject(-1)
+      else
+        console.log("error: #{err}")
+        resolve(0)
 
-//============================================================================
-// メイン処理
-//============================================================================
+#============================================================================
+#============================================================================
+#============================================================================
 
-// 引数チェック
-ARGV.option({
-  name: "watch",
-  short: "w",
-  type: "string",
-  description: "watch source file change.",
+#============================================================================
+# メイン処理
+#============================================================================
+
+# 引数チェック
+ARGV.option
+  name: "watch"
+  short: "w"
+  type: "string"
+  description: "watch source file change."
   example: "terffee -wc [source file path]"
-});
-
-ARGV.option({
-  name: "compile",
-  short: "c",
-  type: "path",
-  description: "compile source file.",
+ARGV.option
+  name: "compile"
+  short: "c"
+  type: "path"
+  description: "compile source file."
   example: "terffee -c [source file path]"
-});
-
-ARGV.option({
-  name: "output",
-  short: "o",
-  type: "path",
-  description: "compiled file output directory.",
+ARGV.option
+  name: "output"
+  short: "o"
+  type: "path"
+  description: "compiled file output directory."
   example: "terffee -o [output directroy]"
-});
-
-ARGV.option({
-  name: "nomap",
-  short: "n",
-  type: "string",
-  description: "not include inline sourceMap.",
+ARGV.option
+  name: "nomap"
+  short: "n"
+  type: "string"
+  description: "not include inline sourceMap."
   example: "terffee -n"
-});
-
-ARGV.option({
-  name: "nominify",
-  short: "m",
-  type: "string",
-  description: "not minify source.",
+ARGV.option
+  name: "nominify"
+  short: "m"
+  type: "string"
+  description: "not minify source."
   example: "terffee -m"
-});
-
-ARGV.option({
-  name: "extension",
-  short: "e",
-  type: "string",
-  description: "Specify the extension after compilation.",
+ARGV.option
+  name: "extension"
+  short: "e"
+  type: "string"
+  description: "Specify the extension after compilation."
   example: "terffee -e js"
-});
-
-ARGV.option({
-  name: "version",
-  short: "v",
-  type: "string",
-  description: "display this menu.",
+ARGV.option
+  name: "version"
+  short: "v"
+  type: "string"
+  description: "display this menu."
   example: "terffee -v"
-});
+argopt = ARGV.run()
 
-argopt = ARGV.run();
+if (argopt.options.version)
+  console.log "ver #{packinfo.version}"
+  process.exit(0)
 
-if (argopt.options.version) {
-  console.log(`ver ${packinfo.version}`);
-  process.exit(0);
-}
+target = process.argv
+target.splice(0, 2)
+argm = MINIMIST(target)
 
-target = process.argv;
+#============================================================================
+# オプションを取得
+#============================================================================
+c_opt = argm.c || argm.compile
+outputlist_tmp = argm.o || argm.output
+no_inlinemap = argm.n || argm.nomap
+nominify = argm.m || argm.nominify
+exttmp= argm.e || argm.extension
+if (exttmp)
+  extension = argopt.options.extension
+  if (extension == "true")
+    console.log "Please, input output file extension."
+    process.exit()
+else
+  extension = undefined
 
-target.splice(0, 2);
+#============================================================================
+# コンパイルするソースファイル一覧を取得する
+#============================================================================
+sourcepath_tmp = []
+directotypath = []
+sourcepath_tmp = argm._
+if (c_opt?)
+  if (typeof c_opt == 'string')
+    c_opt = [c_opt]
+  sourcepath_tmp.push.apply(sourcepath_tmp, c_opt)
 
-argm = MINIMIST(target);
+#============================================================================
+# コンパイル／minify化したファイルを保存する一覧を取得する　
+#============================================================================
+if (typeof outputlist_tmp == "object")
+  outputlist = outputlist_tmp
+else
+  outputlist = [outputlist_tmp]
 
-//============================================================================
-// オプションを取得
-//============================================================================
-c_opt = argm.c || argm.compile;
+#============================================================================
+# 引数で指定されたソース一覧と保存先一覧を整理する
+#============================================================================
+sourcepath = []
+sourcepath_tmp.forEach (fpath, cnt) ->
 
-outputlist_tmp = argm.o || argm.output;
+  #===========================================================================
+  # ソースの種類（ファイルかディレクトリか）と存在するかチェック
+  #===========================================================================
+  # 処理するファイル
+  src = fpath
+  stype = isPath_DirectoryOrFile(src).type
+  # ソースに指定されたファイル／ディレクトリが存在する場合は処理する
+  if (stype > 0)
+    # 保存先リストからひとつ取り出す
+    output = outputlist[cnt] || outputlist[outputlist.length-1]
 
-no_inlinemap = argm.n || argm.nomap;
+    # 保存先が存在する
+    if (output?)
+      otype = isPath_DirectoryOrFile(output).type
+      # outputが存在しなかったらファイル
+      if (otype == -1)
+        otype = 2
 
-nominify = argm.m || argm.nominify;
+    # 保存先がundefined
+    else
+      # 保存先をsrcから生成する
+      otype = 1
 
-exttmp = argm.e || argm.extension;
+    # srcの末尾に「/」があったら除去する
+    src = src.replace(/\/*$/, "")
+    # outputの末尾に「/」があったら除去する
+    output = output.replace(/\/*$/, "") if (outputp?)
 
-if (exttmp) {
-  extension = argopt.options.extension;
-  if (extension === "true") {
-    console.log("Please, input output file extension.");
-    process.exit();
-  }
-} else {
-  extension = void 0;
-}
-
-//============================================================================
-// コンパイルするソースファイル一覧を取得する
-//============================================================================
-sourcepath_tmp = [];
-
-directotypath = [];
-
-sourcepath_tmp = argm._;
-
-if ((c_opt != null)) {
-  if (typeof c_opt === 'string') {
-    c_opt = [c_opt];
-  }
-  sourcepath_tmp.push.apply(sourcepath_tmp, c_opt);
-}
-
-//============================================================================
-// コンパイル／minify化したファイルを保存する一覧を取得する　
-//============================================================================
-if (typeof outputlist_tmp === "object") {
-  outputlist = outputlist_tmp;
-} else {
-  outputlist = [outputlist_tmp];
-}
-
-//============================================================================
-// 引数で指定されたソース一覧と保存先一覧を整理する
-//============================================================================
-sourcepath = [];
-
-sourcepath_tmp.forEach(function(fpath, cnt) {
-  var otype, output, src, stype;
-  //===========================================================================
-  // ソースの種類（ファイルかディレクトリか）と存在するかチェック
-  //===========================================================================
-  // 処理するファイル
-  src = fpath;
-  stype = isPath_DirectoryOrFile(src).type;
-  // ソースに指定されたファイル／ディレクトリが存在する場合は処理する
-  if (stype > 0) {
-    // 保存先リストからひとつ取り出す
-    output = outputlist[cnt] || outputlist[outputlist.length - 1];
-    // 保存先が存在する
-    if ((output != null)) {
-      otype = isPath_DirectoryOrFile(output).type;
-      // outputが存在しなかったらファイル
-      if (otype === -1) {
-        otype = 2;
-      }
-    } else {
-      // 保存先をsrcから生成する
-      // 保存先がundefined
-      otype = 1;
-    }
-    // srcの末尾に「/」があったら除去する
-    src = src.replace(/\/*$/, "");
-    if ((typeof outputp !== "undefined" && outputp !== null)) {
-      // outputの末尾に「/」があったら除去する
-      output = output.replace(/\/*$/, "");
-    }
-    return sourcepath.push({
-      src: src,
-      stype: stype,
-      output: output,
+    sourcepath.push
+      src: src
+      stype: stype
+      output: output
       otype: otype
-    });
-  } else {
-    console.log(`\n${red}File/Directory not found: ${src}${reset}`);
-    return process.exit(-1);
-  }
-});
+  else
 
-//============================================================================
-// ソースファイルが指定されていない
-//============================================================================
-if (target.length === 0) {
-  ARGV.run(["-h"]);
-  process.exit(-1);
-}
+    console.log "\n#{red}File/Directory not found: #{src}#{reset}"
+    process.exit(-1)
 
-if (argm.w || argm.watch) {
-  //==========================================================================
-  // ソースファイル／ディレクトリ監視
-  //==========================================================================
-  WATCHER.on("change", function(fpath, stat) {
-    var delete_output, e, fname, fname2, i, idx, output, srcinfo, target_list;
-    fname2 = fpath.replace(/[\.\/]/g, "");
-    if (stat.deleted == null) {
-      fname = PATH.basename(fpath);
-      if (PATH.extname(fname) === ".coffee") {
-        // ファイル更新
-        output = SRC2OUTPUT[fname2];
-        return output2compile(output);
-      } else {
-        // ファイル追加
-        srcinfo = void 0;
-        // 追加されたディレクトリを取得
-        sourcepath.forEach(function(info) {
-          if (info.src === fpath) {
-            return srcinfo = info;
-          }
-        });
-        // 追加されたディレクトリ内の追加されたファイルを取得
-        return setFileWatchIntoDirectory(srcinfo).then(function(compile_list) {
-          // 追加されたファイルがあった場合は出力先を取り出す（コンパイルされる）
-          if (compile_list.length > 0) {
-            output = compile_list[0];
-            return output2compile(output);
-          }
-        });
-      }
-    } else {
-      // 監視ファイル削除
-      WATCHER.remove(fpath);
-      output = SRC2OUTPUT[fname2];
-      idx = 0;
-      i = 0;
-      target_list = OUTPUT2SRCLIST[output];
-      target_list.map(function(tmp) {
-        if (tmp.src === fpath) {
-          idx = i;
-        }
-        return i++;
-      });
-      target_list.splice(idx, 1);
-      delete SRC2OUTPUT[fname2];
-      if (target_list.length === 0) {
-        delete OUTPUT2SRCLIST[output];
-        delete_output = output;
-        output = void 0;
-        try {
-          FS.unlink(delete_output, function(err) {});
-        } catch (error) {
-          e = error;
-        }
-      }
-      if ((output != null)) {
-        return output2compile(output);
-      }
-    }
-  });
-  // 監視対象を列挙
-  SRC2OUTPUT = {};
-  OUTPUT2SRCLIST = {};
-  for (j = 0, len = sourcepath.length; j < len; j++) {
-    srcinfo = sourcepath[j];
-    try {
-      // ソースとして指定されたファイル／ディレクトリが存在するかチェック
-      FS.accessSync(srcinfo.src, FS.F_OK);
-      // 監視対象をひとつ取り出して、行末のスラッシュを除去する
-      src = srcinfo.src.replace(/\/*$/, "");
-      stype = srcinfo.stype;
-      output = srcinfo.output || ".";
-      otype = srcinfo.otype;
-      ext = nominify ? ".js" : ".min.js";
-      // 監視対象がディレクトリの場合は中のファイルを走査し処理する
-      switch (stype) {
-        case 1: // 監視対象がディレクトリ
-          console.log(`${yellow}watching directory [${green}${src}${reset}]`);
-          WATCHER.add(srcinfo.src);
-          setFileWatchIntoDirectory(srcinfo);
-          break;
-        case 2: // 監視対象がファイル
-          console.log(`watching file [${yellow}${src}${reset}]`);
-          WATCHER.add(src);
-          // 出力先から出力ファイル名を生成する
-          switch (otype) {
-            case 1: // 出力先がディレクトリ　
-              fname = PATH.basename(src);
-              ofile = `${output}/` + PATH.basename(fname).replace(/\.coffee$/, ext);
-              break;
-            case 2: // 出力先がファイル　
-              ofile = output;
-          }
-          if (OUTPUT2SRCLIST[ofile] == null) {
-            OUTPUT2SRCLIST[ofile] = [];
-          }
-          // ソースファイルに対する出力先のファイル名を設定する
-          SRC2OUTPUT[src.replace(/[\.\/]/g, "")] = ofile;
-          OUTPUT2SRCLIST[ofile].push({
-            src: src,
+#============================================================================
+# ソースファイルが指定されていない
+#============================================================================
+if (target.length == 0)
+  ARGV.run(["-h"])
+  process.exit(-1)
+
+if (argm.w || argm.watch)
+  #==========================================================================
+  # ソースファイル／ディレクトリ監視
+  #==========================================================================
+  WATCHER
+    .on "change", (fpath, stat) ->
+      fname2 = fpath.replace(/[\.\/]/g, "")
+      if (!stat.deleted?)
+        fname = PATH.basename(fpath)
+
+        if (PATH.extname(fname) == ".coffee")
+          # ファイル更新
+          output = SRC2OUTPUT[fname2]
+          output2compile(output)
+        else
+          # ファイル追加
+          srcinfo = undefined
+          # 追加されたディレクトリを取得
+          sourcepath.forEach (info) ->
+            if (info.src == fpath)
+              srcinfo = info
+          # 追加されたディレクトリ内の追加されたファイルを取得
+          setFileWatchIntoDirectory(srcinfo).then (compile_list) ->
+            # 追加されたファイルがあった場合は出力先を取り出す（コンパイルされる）
+            if (compile_list.length > 0)
+              output = compile_list[0]
+              output2compile(output)
+      else
+        # 監視ファイル削除
+        WATCHER.remove(fpath)
+        output = SRC2OUTPUT[fname2]
+        idx = 0
+        i = 0
+        target_list = OUTPUT2SRCLIST[output]
+        target_list.map (tmp) ->
+          if (tmp.src == fpath)
+            idx = i
+          i++
+        target_list.splice(idx, 1)
+        delete SRC2OUTPUT[fname2]
+        if (target_list.length == 0)
+          delete OUTPUT2SRCLIST[output]
+          delete_output = output
+          output = undefined
+          try
+            FS.unlink delete_output, (err) ->
+          catch e
+        output2compile(output) if (output?)
+
+  # 監視対象を列挙
+  SRC2OUTPUT = {}
+  OUTPUT2SRCLIST = {}
+  for srcinfo in sourcepath
+    try
+      # ソースとして指定されたファイル／ディレクトリが存在するかチェック
+      FS.accessSync(srcinfo.src, FS.F_OK)
+      # 監視対象をひとつ取り出して、行末のスラッシュを除去する
+      src = srcinfo.src.replace(/\/*$/, "")
+      stype = srcinfo.stype
+      output = srcinfo.output || "."
+      otype = srcinfo.otype
+      ext = if (nominify) then ".js" else ".min.js"
+
+      # 監視対象がディレクトリの場合は中のファイルを走査し処理する
+      switch (stype)
+        when 1 # 監視対象がディレクトリ
+          console.log("#{yellow}watching directory [#{green}#{src}#{reset}]")
+          WATCHER.add srcinfo.src
+          setFileWatchIntoDirectory(srcinfo)
+
+        when 2 # 監視対象がファイル
+          console.log("watching file [#{yellow}#{src}#{reset}]")
+          WATCHER.add src
+          # 出力先から出力ファイル名を生成する
+          switch (otype)
+            when 1 # 出力先がディレクトリ　
+              fname = PATH.basename(src)
+              ofile = "#{output}/"+PATH.basename(fname).replace(/\.coffee$/, ext)
+            when 2 # 出力先がファイル　
+              ofile = output
+          OUTPUT2SRCLIST[ofile] = [] if (!OUTPUT2SRCLIST[ofile]?)
+          # ソースファイルに対する出力先のファイル名を設定する
+          SRC2OUTPUT[src.replace(/[\.\/]/g, "")] = ofile
+          OUTPUT2SRCLIST[ofile].push
+            src: src
             output: ofile
-          });
-      }
-    } catch (error) {
-      e = error;
-      //echo e
-      console.log(`File/Directory not found: ${src}`);
-      process.exit(0);
-      WATCHER.close();
-    }
-  }
-} else {
-  //==========================================================================
-  // ソースファイルコンパイル
-  //==========================================================================
-  // ソース指定がディレクトリの場合を想定して展開する
-  sourcepath_expand = [];
-  ASYNC.whilst(function() {
-    if (sourcepath.length > 0) {
-      return true;
-    } else {
-      return false;
-    }
-  }, function(callback) {
-    var srclist;
-    srcinfo = sourcepath.shift();
-    srclist = get_sourcelist_in_path(srcinfo);
-    if ((srclist != null)) {
-      Array.prototype.push.apply(sourcepath_expand, srclist);
-    }
-    return callback(null, 0);
-  }, function(err, result) {
-    // コンパイルする
-    return sourcelist_fileread(sourcepath_expand).then(function(srcjoinlist) {
-      return sourcelist_compile(srcjoinlist);
-    }).then(function(err) {
-      if (err === 0) {
-        return console.log(`${green}compile done: ` + new Date() + reset + "\n");
-      }
-    });
-  });
-}
+
+    catch e
+      #echo e
+      console.log("File/Directory not found: #{src}")
+      process.exit(0)
+      WATCHER.close()
+
+else
+
+  #==========================================================================
+  # ソースファイルコンパイル
+  #==========================================================================
+  # ソース指定がディレクトリの場合を想定して展開する
+  sourcepath_expand = []
+  ASYNC.whilst ->
+    if (sourcepath.length > 0)
+      return true
+    else
+      return false
+  , (callback) ->
+    srcinfo = sourcepath.shift()
+    srclist = get_sourcelist_in_path(srcinfo)
+    if (srclist?)
+      Array.prototype.push.apply(sourcepath_expand, srclist)
+    callback(null, 0)
+  , (err, result) ->
+    # コンパイルする
+    sourcelist_fileread(sourcepath_expand).then (srcjoinlist) ->
+      return sourcelist_compile(srcjoinlist)
+    .then (err) ->
+      if (err == 0)
+        console.log("#{green}compile done: "+new Date()+reset+"\n")
+
+
+
