@@ -7,7 +7,7 @@ echo "Input commit message:"
 echo -n "message: "
 read message
 
-if [ -z $message ]; then
+if [ -z "$message" ]; then
   echo "Please input commit message."
   exit 1
 else
@@ -20,9 +20,9 @@ echo "2) Patch"
 echo -n "input number: "
 read version
 
-if [ $version = "1" ]; then
+if [ "$version" = "1" ]; then
   vernum=`npm version minor`
-elif [ $version = "2" ]; then
+elif [ "$version" = "2" ]; then
   vernum=`npm version patch`
 else
   echo "bad input number."
