@@ -21,12 +21,12 @@ echo -n "input number: "
 read version
 
 if [ $version = "1" ]; then
-  npm version minor
+  vernum=`npm version minor`
 elif [ $version = "2" ]; then
-  npm version patch
+  vernum=`npm version patch`
 else
   echo "bad input number."
   exit 2
 fi
 
-
+echo $vernum
