@@ -1,0 +1,4 @@
+#!/bin/bash
+
+cp terffee.js terffee
+publish
