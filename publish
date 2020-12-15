@@ -1,0 +1,32 @@
+#!/bin/bash
+
+cp terffee.js terffee
+git add -A
+
+echo "Input commit message:"
+echo -n "message: "
+read message
+
+if [ -z $message ]; then
+  echo "Please input commit message."
+  exit 1
+else
+  git commit -m "$message"
+fi
+
+echo "Select version:"
+echo "1) Minor"
+echo "2) Patch"
+echo -n "input number: "
+read version
+
+if [ $version = "1" ]; then
+  npm version minor
+elif [ $version = "2" ]; then
+  npm version patch
+else
+  echo "bad input number."
+  exit 2
+fi
+
+
