@@ -93,7 +93,7 @@ compile = (coffeecode) ->
               terser_opts =
                 sourceMap:
                   url: "inline"
-            code = (TERSER.minify(jsstr, terser_opts)).code
+            code = (await TERSER.minify(jsstr, terser_opts)).code
           resolve
             err: 0
             status: "compiled."
